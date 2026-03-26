@@ -321,16 +321,26 @@ def main():
     if args.output:
         output_path = args.output
     else:
-        basename = os.path.basename(args.excel_path)
         if args.report_date:
-            output_path = os.path.join("output", args.report_date, basename)
+            # Name format: YYYYMMDD_Costing TMT.xlsx
+            date_compact = args.report_date.replace("-", "")
+            out_name = f"{date_compact}_Costing TMT.xlsx"
+            output_path = os.path.join("output", args.report_date, out_name)
         else:
+            basename = os.path.basename(args.excel_path)
             output_path = os.path.join("output", basename)
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
     print(f"Loading: {args.excel_path}", file=sys.stderr)
     wb = openpyxl.load_workbook(args.excel_path)
+
+    # Keep only Raipur and NCR tabs, remove all others
+    keep_tabs = {"Raipur", "NCR"}
+    for name in wb.sheetnames:
+        if name not in keep_tabs:
+            del wb[name]
+    print(f"Tabs kept: {wb.sheetnames}", file=sys.stderr)
 
     updates = update_workbook(wb, args)
 
