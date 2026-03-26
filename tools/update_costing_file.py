@@ -26,6 +26,7 @@ Exit codes:
 
 import argparse
 import os
+import subprocess
 import sys
 from datetime import datetime
 
@@ -47,6 +48,58 @@ LOG_ITEMS = [
     "Market price TMT",
     "Margin TMT",
 ]
+
+
+def _verify_no_formulas(filepath):
+    """Scan the saved Excel file and fail loudly if any formula strings remain."""
+    wb = openpyxl.load_workbook(filepath)
+    errors = []
+    for ws in wb:
+        for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=ws.max_column):
+            for cell in row:
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    errors.append(f"  {ws.title}!{cell.coordinate}: {cell.value}")
+    if errors:
+        print("FATAL: Formulas found in output file (would cause Excel errors):", file=sys.stderr)
+        for e in errors:
+            print(e, file=sys.stderr)
+        sys.exit(1)
+    print(f"Verified: 0 formulas in output (all values computed)", file=sys.stderr)
+
+
+def _auto_push(output_path, log_path, report_date):
+    """Auto-commit and push output files to main."""
+    try:
+        # Stage output files
+        files_to_add = [output_path, log_path]
+        files_to_add = [f for f in files_to_add if os.path.exists(f)]
+        subprocess.run(["git", "add"] + files_to_add, check=True, capture_output=True)
+
+        # Commit
+        msg = f"Update costing output for {report_date}"
+        subprocess.run(["git", "commit", "-m", msg], check=True, capture_output=True)
+
+        # Push to main with retry
+        for attempt in range(4):
+            result = subprocess.run(
+                ["git", "push", "origin", "main"],
+                capture_output=True, text=True,
+            )
+            if result.returncode == 0:
+                print(f"Pushed to main successfully", file=sys.stderr)
+                return
+            if attempt < 3:
+                import time
+                wait = 2 ** (attempt + 1)
+                print(f"Push failed, retrying in {wait}s...", file=sys.stderr)
+                time.sleep(wait)
+        print(f"WARNING: Push failed after 4 attempts. Commit saved locally.", file=sys.stderr)
+    except subprocess.CalledProcessError as e:
+        # Nothing to commit is OK (e.g., re-run for same date)
+        if b"nothing to commit" in (e.stderr or b""):
+            print("No new changes to push (same data already committed)", file=sys.stderr)
+        else:
+            print(f"WARNING: Auto-push failed: {e.stderr}", file=sys.stderr)
 
 
 def _cell_val(ws, ref, fallback=0):
@@ -499,11 +552,16 @@ def main():
 
     wb.save(output_path)
     print(f"Saved to: {output_path}", file=sys.stderr)
+
+    # Safety check: fail if any formulas leaked through
+    _verify_no_formulas(output_path)
+
     print(f"\nApplied {len(updates)} updates:", file=sys.stderr)
     for u in updates:
         print(f"  - {u}", file=sys.stderr)
 
     # Compute margins and update cumulative change log
+    log_path = os.path.join("output", "change_log.xlsx")
     if args.report_date:
         margins = compute_margins(wb, args)
         print(f"\nComputed margins:", file=sys.stderr)
@@ -512,7 +570,10 @@ def main():
         print(f"  NCR Billet Nett Margin:     {margins['ncr_billet']}", file=sys.stderr)
         print(f"  NCR TMT Margin:             {margins['ncr_tmt']}", file=sys.stderr)
         update_change_log(args, margins)
-        format_change_log(os.path.join("output", "change_log.xlsx"))
+        format_change_log(log_path)
+
+        # Auto-commit and push to main
+        _auto_push(output_path, log_path, args.report_date)
 
     sys.exit(0)
 
