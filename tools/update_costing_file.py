@@ -32,6 +32,8 @@ from datetime import datetime
 import openpyxl
 from openpyxl.styles import Alignment, Font
 
+from format_output import format_change_log, format_ncr, format_raipur
+
 # Items tracked in the change log (fixed order)
 LOG_ITEMS = [
     "Pallet DRI",
@@ -336,6 +338,12 @@ def main():
         print("WARNING: No updates specified. Use --help for options.", file=sys.stderr)
         sys.exit(0)
 
+    # Apply professional formatting
+    if "Raipur" in wb.sheetnames:
+        format_raipur(wb["Raipur"])
+    if "NCR" in wb.sheetnames:
+        format_ncr(wb["NCR"])
+
     wb.save(output_path)
     print(f"Saved to: {output_path}", file=sys.stderr)
     print(f"\nApplied {len(updates)} updates:", file=sys.stderr)
@@ -351,6 +359,7 @@ def main():
         print(f"  NCR Billet Nett Margin:     {margins['ncr_billet']}", file=sys.stderr)
         print(f"  NCR TMT Margin:             {margins['ncr_tmt']}", file=sys.stderr)
         update_change_log(args, margins)
+        format_change_log(os.path.join("output", "change_log.xlsx"))
 
     sys.exit(0)
 
