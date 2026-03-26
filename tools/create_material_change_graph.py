@@ -44,8 +44,10 @@ GRAPH_SPECS = [
     {"item": "Scrap",              "row": 5,  "markets": ["Raipur", "NCR"], "unit": "INR/MT"},
     {"item": "Silico Manganese",   "row": 6,  "markets": ["Raipur"],        "unit": "INR/kg"},
     {"item": "Iron Ore DRI",       "row": 7,  "markets": ["Raipur"],        "unit": "INR/MT"},
-    {"item": "Nett Margin Billet", "row": 10, "markets": ["Raipur", "NCR"], "unit": "INR/MT"},
-    {"item": "Margin TMT",         "row": 12, "markets": ["Raipur", "NCR"], "unit": "INR/MT"},
+    {"item": "Nett Margin Billet (Raipur)", "row": 10, "markets": ["Raipur"], "market_key": "Raipur", "unit": "INR/MT"},
+    {"item": "Nett Margin Billet (NCR)",    "row": 10, "markets": ["NCR"],    "market_key": "NCR",    "unit": "INR/MT"},
+    {"item": "Margin TMT (Raipur)",         "row": 12, "markets": ["Raipur"], "market_key": "Raipur", "unit": "INR/MT"},
+    {"item": "Margin TMT (NCR)",            "row": 12, "markets": ["NCR"],    "market_key": "NCR",    "unit": "INR/MT"},
 ]
 
 # Colors
@@ -77,10 +79,15 @@ def load_change_log(path):
             dates.append(str(val))
             date_cols.append(col)
 
-    # Parse data for each graph spec
+    # Parse data for each unique row in graph specs
     data = {}
+    seen_rows = {}
     for spec in GRAPH_SPECS:
         row = spec["row"]
+        if row in seen_rows:
+            # Reuse already-parsed data for duplicate rows (e.g. margins split by market)
+            data[spec["item"]] = seen_rows[row]
+            continue
         raipur_vals = []
         ncr_vals = []
         for col in date_cols:
@@ -89,7 +96,9 @@ def load_change_log(path):
             n_val = ws.cell(row=row, column=col + 1).value
             raipur_vals.append(_parse_value(r_val))
             ncr_vals.append(_parse_value(n_val))
-        data[spec["item"]] = {"Raipur": raipur_vals, "NCR": ncr_vals}
+        row_data = {"Raipur": raipur_vals, "NCR": ncr_vals}
+        seen_rows[row] = row_data
+        data[spec["item"]] = row_data
 
     wb.close()
     return dates, data
@@ -164,9 +173,10 @@ def create_chart_image(spec, dates, data, tmp_dir):
 
 
 def _plot_single_market(ax, spec, dates, data):
-    """Plot bar chart for a single market (Raipur only)."""
+    """Plot bar chart for a single market."""
     item = spec["item"]
-    values = data[item]["Raipur"]
+    market_key = spec.get("market_key", "Raipur")
+    values = data[item][market_key]
     changes, labels, avg = compute_changes(values, dates)
 
     x = range(len(labels))
@@ -358,8 +368,11 @@ def _add_chart_slide(prs, chart_path, spec):
     txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(12.333), Inches(0.6))
     tf = txBox.text_frame
     p = tf.paragraphs[0]
-    markets_str = " & ".join(spec["markets"])
-    p.text = f"{spec['item']} ({markets_str}) - {spec['unit']}"
+    if "market_key" in spec:
+        p.text = f"{spec['item']} - {spec['unit']}"
+    else:
+        markets_str = " & ".join(spec["markets"])
+        p.text = f"{spec['item']} ({markets_str}) - {spec['unit']}"
     p.font.size = Pt(18)
     p.font.bold = True
     p.font.color.rgb = RGBColor(0x21, 0x21, 0x21)
