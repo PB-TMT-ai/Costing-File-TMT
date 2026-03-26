@@ -49,12 +49,24 @@ Extract steel market prices from the BigMint Daily Report PDF and update the blu
      --billet-mandi <value_before_adj> \
      --tmt-ncr <value>
    ```
-4. **Verify output** — open `output/<file>.xlsx` and check values
+4. **Verify output** — open `output/YYYY-MM-DD/<file>.xlsx` and check values
+5. **Check change log** — open `output/change_log.xlsx` and verify the new date column was appended with correct Raipur and NCR values
+
+## Output Structure
+```
+output/
+├── change_log.xlsx              # Cumulative price history (all dates)
+├── 2026-03-26/                  # Date-wise folder
+│   └── <costing_file>.xlsx      # Updated costing file for this date
+├── 2026-03-27/
+│   └── <costing_file>.xlsx
+└── ...
+```
 
 ## Tools Used
 | Tool | Purpose |
 |------|---------|
-| `tools/update_costing_file.py` | Updates Excel cells while preserving formulas and formatting |
+| `tools/update_costing_file.py` | Updates Excel cells, saves to date folder, appends to change log |
 
 ## Edge Cases
 - **Silico Manganese**: PDF reports in INR/ton — must divide by 1000 for the kg value in Excel
@@ -62,6 +74,7 @@ Extract steel market prices from the BigMint Daily Report PDF and update the blu
 - **NCR other inputs**: DRI, Pig Iron, Silico Mn are auto-calculated from Raipur via cross-sheet formulas — do NOT update those cells directly
 - **Date format**: Must be passed as YYYY-MM-DD string to the tool
 - **PDF table structure**: Prices are in the "Price" column. Ignore "Change", "W-O-W", "1M", "3M" columns
+- **Same-date re-run**: If the tool is run again for the same date, the change log columns are overwritten (supports corrections without duplication)
 
 ## Lessons Learned
 - The BigMint PDF has a consistent structure across daily reports — page numbers may shift but section headers remain stable
