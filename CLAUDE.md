@@ -15,13 +15,17 @@ This project uses the WAT framework (Workflows, Agents, Tools).
 ## Directory Structure
 
 - `workflows/` — Markdown SOPs defining objectives, inputs, tools, outputs, edge cases
-- `tools/` — Python scripts for execution (API calls, transformations, file ops)
+- `tools/` — Python/JS scripts for execution (API calls, transformations, file ops)
   - `update_costing_file.py` — Main update tool: sets prices, computes margins, saves output, updates change log
   - `extract_all_pdfs.py` — Batch extraction: auto-discovers BigMint PDFs, extracts all 11 data points, outputs JSON
   - `format_output.py` — Professional Excel formatting (auto-called by update tool)
+  - `create_material_change_graph.py` — Generates JSW One branded PPTX with MoM change bar charts from change log
+  - `create_material_change_graph.js` — Node.js/PptxGenJS version (native charts — may not render in all viewers)
 - `.claude/skills/` — Claude Code skills (slash commands for common tasks)
+  - `jsw-one-pptx/` — JSW One PowerPoint branding: logo, colors, layouts, SmartArt library
 - `data/` — Input costing files, templates, and BigMint PDFs (may also exist in root directory)
-- `output/` — Date-wise folders (`output/YYYY-MM-DD/YYYYMMDD_Costing TMT.xlsx`) and cumulative `change_log.xlsx`
+- `output/` — Date-wise folders (`output/YYYY-MM-DD/YYYYMMDD_Costing TMT.xlsx`), cumulative `change_log.xlsx`, and `material_change_graphs.pptx`
+- `LEARNINGS.md` — Accumulated lessons and gotchas (update when non-obvious issues are resolved)
 
 ## Daily Costing Update (Primary Workflow)
 
@@ -52,11 +56,25 @@ For processing multiple PDFs at once, use `tools/extract_all_pdfs.py` to auto-di
 
 **Skip push during batch**: Set `SKIP_PUSH=1` environment variable to skip the auto-push retry loop during batch runs (saves ~30s per invocation).
 
+## Material Change Graphs (Presentation Output)
+
+Generate a JSW One branded PowerPoint with month-on-month change bar charts from the change log.
+
+```bash
+python tools/create_material_change_graph.py
+```
+
+**Items tracked**: Pallet DRI, Pig Iron, Scrap, Silico Manganese, Iron Ore DRI, Nett Margin Billet (Raipur/NCR), Margin TMT (Raipur/NCR).
+
+**Output**: `output/material_change_graphs.pptx` — 10 slides (title + 9 charts) with JSW One branding (logo, divider, Calibri, blue/grey palette).
+
+**Chart approach**: Uses matplotlib for chart images + python-pptx for slide layout. Native PptxGenJS charts (`create_material_change_graph.js`) exist but do not render in all viewers — use the Python version for reliable output. See `LEARNINGS.md` for details.
+
 ## When Things Fail
 
 1. Read the full error message and trace
 2. Fix the script and retest
-3. Document what you learned in the workflow
+3. Document what you learned in `LEARNINGS.md` and the relevant workflow
 4. If the fix involves paid API calls, check with the user before running
 
 ## Tool Conventions
@@ -67,3 +85,5 @@ For processing multiple PDFs at once, use `tools/extract_all_pdfs.py` to auto-di
 - Tools exit with code 0 on success, non-zero on failure
 - Tools log to stderr, write results to stdout or files
 - Output Excel files must contain zero formulas (all values pre-computed)
+- For PPTX output, use image-based charts (matplotlib) — native PptxGenJS charts do not render in all viewers
+- Document learnings in `LEARNINGS.md` whenever a non-obvious issue is resolved

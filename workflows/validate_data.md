@@ -38,4 +38,6 @@ Check the integrity and correctness of a costing data file before processing. Th
 - **Very large files (>100MB)**: Validates only the first 10,000 rows with a warning
 
 ## Lessons Learned
-- _(Update this section as you encounter issues)_
+- Silico Manganese: BigMint PDF reports in INR/ton, costing file uses INR/kg — always divide by 1000
+- NCR Scrap & Billet use a -500 adjustment — validate the adjusted value, not the raw PDF value
+- See `LEARNINGS.md` for accumulated cross-project lessons

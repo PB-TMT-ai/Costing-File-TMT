@@ -31,4 +31,6 @@ Parse a costing file (CSV or Excel), validate its structure, normalize the data,
 - **Duplicate entries**: Flagged in output but not removed (user decides)
 
 ## Lessons Learned
-- _(Update this section as you encounter issues)_
+- All output Excel cells must be pre-computed values (no formulas) — openpyxl formulas cause errors in Excel Online/GitHub preview
+- External links and comments must be stripped from output xlsx to prevent "found a problem" errors
+- See `LEARNINGS.md` for accumulated cross-project lessons

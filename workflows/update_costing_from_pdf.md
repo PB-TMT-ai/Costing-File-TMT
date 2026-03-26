@@ -105,6 +105,7 @@ output/
 | `tools/update_costing_file.py` | Updates cells, computes margins, saves to date folder, appends change log, applies formatting |
 | `tools/extract_all_pdfs.py` | Batch extraction: auto-discovers BigMint PDFs, extracts all 11 data points, outputs JSON |
 | `tools/format_output.py` | Professional formatting (auto-called by update tool, also usable standalone) |
+| `tools/create_material_change_graph.py` | Generate JSW One branded PPTX with MoM change charts from change log |
 
 ## Batch Processing (Multiple PDFs)
 
@@ -164,3 +165,5 @@ To process multiple historical PDFs at once:
 - Output files are auto-pushed to `main` — no manual merge needed
 - Output file naming: `YYYYMMDD_Costing TMT.xlsx` — only Raipur and NCR tabs are kept
 - **Batch processing**: When processing historical PDFs, delete `change_log.xlsx` first and reprocess in chronological order. Use `SKIP_PUSH=1` to skip push retries during batch runs
+- **After updating the change log**, regenerate the material change graphs: `python tools/create_material_change_graph.py`
+- **For PPTX charts, use matplotlib images** — PptxGenJS native charts do not render in all viewers (Google Slides, LibreOffice, some PowerPoint versions show blank). See `LEARNINGS.md`

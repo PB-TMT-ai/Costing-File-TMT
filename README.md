@@ -10,10 +10,12 @@ Costing-File-TMT/
 ├── tools/               # Python scripts — the execution layer
 ├── .claude/skills/      # Claude Code skills (slash commands)
 ├── data/                # Input data (costing files, templates)
-├── output/              # Generated outputs (date-wise folders + change log)
+├── output/              # Generated outputs (date-wise folders + change log + graphs)
 │   ├── YYYY-MM-DD/      # Daily output folders
-│   └── change_log.xlsx  # Cumulative price & margin history
+│   ├── change_log.xlsx  # Cumulative price & margin history
+│   └── material_change_graphs.pptx  # JSW One branded MoM change charts
 ├── .env.example         # Template for environment variables
+├── LEARNINGS.md         # Accumulated lessons and gotchas
 └── CLAUDE.md            # Agent operating instructions
 ```
 
@@ -46,6 +48,7 @@ Costing-File-TMT/
 | [process_costing_file.md](workflows/process_costing_file.md) | Parse and validate costing file data |
 | [generate_cost_report.md](workflows/generate_cost_report.md) | Generate formatted cost reports |
 | [validate_data.md](workflows/validate_data.md) | Validate input data integrity |
+| [generate_change_graphs.md](workflows/generate_change_graphs.md) | Generate JSW One branded PPTX with MoM change charts |
 
 ## Tools Index
 
@@ -56,6 +59,7 @@ Costing-File-TMT/
 | `tools/validate_data.py` | Validate file structure and data integrity |
 | `tools/parse_costing_file.py` | Parse and normalize costing file data |
 | `tools/generate_report.py` | Generate summary/detailed/breakdown cost reports |
+| `tools/create_material_change_graph.py` | Generate JSW One branded PPTX with MoM change bar charts |
 
 ## Skills (Slash Commands)
 
@@ -64,6 +68,7 @@ Costing-File-TMT/
 | `/update-costing` | End-to-end: extract PDF prices, update Excel, verify, auto-push to main |
 | `/verify-costing [date]` | Verify output file values, zero formulas, and change log |
 | `/extract-prices [pdf]` | Read-only price extraction from BigMint PDF |
+| `/jsw-one-pptx` | JSW One branded PowerPoint generation (board decks, reviews, charts) |
 
 ## Key Design Decisions
 
@@ -72,3 +77,6 @@ Costing-File-TMT/
 - **Safety check** — Tool scans output after save and fails if any formula strings remain.
 - **Clean xlsx** — External links, comments, and stale references are stripped to prevent Excel errors.
 - **File chaining** — Each day's update builds on the previous output, not the original template.
+- **Image-based charts** — PPTX charts use matplotlib images (not native PptxGenJS charts) for universal viewer compatibility.
+- **JSW One branding** — Presentations follow JSW One brand standards (blue `#213366`, grey `#7F7F7F`, Calibri, logo, divider).
+- **Learnings documented** — Non-obvious issues and their fixes are recorded in `LEARNINGS.md`.

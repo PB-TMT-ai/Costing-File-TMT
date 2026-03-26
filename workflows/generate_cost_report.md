@@ -30,4 +30,6 @@ Take processed costing data and generate a formatted summary report with totals,
 - **Very large files**: Processes in chunks to avoid memory issues
 
 ## Lessons Learned
-- _(Update this section as you encounter issues)_
+- For visual/chart reports, use `tools/create_material_change_graph.py` which generates a JSW One branded PPTX with MoM change charts
+- Always use image-based charts (matplotlib) for PPTX output — native PptxGenJS charts do not render in all viewers
+- See `LEARNINGS.md` for accumulated cross-project lessons
