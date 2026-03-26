@@ -28,7 +28,11 @@ Read the PDF cover page (page 1) to get the report date. Look for a line like "2
 
 ## Step 3: Extract 11 Prices from PDF
 
-Use pymupdf (`import fitz`) to extract text from the PDF. Search for these exact sections and extract the **Price** value (first large number after the location name). Ignore "Change", "W-O-W", "1M", "3M" columns.
+**Automated option**: Run `python tools/extract_all_pdfs.py` to auto-extract all 11 data points from all discovered PDFs (outputs JSON). This handles both old and new PDF naming conventions automatically.
+
+**Manual extraction**: Use pymupdf (`import fitz`) to extract text from the PDF. Search for these exact sections and extract the **Price** value (first large number after the location name). Ignore "Change", "W-O-W", "1M", "3M" columns.
+
+**Note**: Older PDFs (pre-2026) use "Ex-Raipur"/"Ex-Mandi" instead of "DAP-Raipur"/"DAP-Mandi" in the Melting Scrap section. HMS(80:20) may not be the first product listed — search up to 25 lines ahead. For TMT Raipur, use the Fe 500 IS 1786 entry (not Fe 500D).
 
 ### Raipur Tab (8 values)
 
@@ -113,3 +117,13 @@ After the tool runs, confirm the output shows:
 - Correct margin values for both Raipur and NCR
 
 Print a summary of the computed margins and confirm the push succeeded.
+
+## Batch Mode (Multiple PDFs)
+
+To process multiple PDFs at once:
+1. Run `python tools/extract_all_pdfs.py` to extract prices from all discovered PDFs
+2. Delete `output/change_log.xlsx` for a clean rebuild
+3. Run the update tool for each date in chronological order with `SKIP_PUSH=1` to skip push retries
+4. Push once at the end
+
+See `workflows/update_costing_from_pdf.md` for full batch processing instructions.

@@ -20,7 +20,9 @@ Read page 1 and find the date line (e.g., "26 Mar 2026").
 
 ## Step 3: Extract All 11 Data Points
 
-Use pymupdf (`import fitz`) to read text from the PDF. Extract these values:
+**Automated alternative**: Run `python tools/extract_all_pdfs.py` to auto-extract all 11 data points from all discovered PDFs. It handles both old and new PDF naming conventions and outputs JSON.
+
+**Manual extraction** using pymupdf (`import fitz`) to read text from the PDF. Extract these values:
 
 ### From Scrap & Metallic > Sponge (India) table
 - **Pallet DRI**: Pellet Sponge (P-DRI) > Central India > Raipur > Price
@@ -30,8 +32,9 @@ Use pymupdf (`import fitz`) to read text from the PDF. Extract these values:
 - **Pig Iron**: DAP-Raipur > Steel Grade > Price
 
 ### From Melting Scrap (India) section
-- **Scrap Raipur**: DAP-Raipur > HMS(80:20) > Price
-- **Scrap Mandi**: DAP-Mandi > HMS(80:20) > Price
+- **Scrap Raipur**: DAP-Raipur > HMS(80:20) > Price (older PDFs use "Ex-Raipur" instead of "DAP-Raipur")
+- **Scrap Mandi**: DAP-Mandi > HMS(80:20) > Price (older PDFs use "Ex-Mandi" instead of "DAP-Mandi")
+- **Note**: HMS(80:20) may not be the first product under a location — other products (CR Busheling, LMS) may appear first
 
 ### From Silico Manganese (India) section
 - **Silico Manganese**: Ex-Raipur > 25-150mm HC 60-14 > Price (this is per ton)
@@ -41,7 +44,7 @@ Use pymupdf (`import fitz`) to read text from the PDF. Extract these values:
 - **Billet Mandi**: North India > Mandi Gobindgarh > BILLET column > Price
 
 ### From Rebar (India) section
-- **TMT Raipur**: Ex-Raipur > 12-25mm IF Route > Fe 500 IS 1786 > Price (basic, not GST)
+- **TMT Raipur**: Ex-Raipur > 12-25mm IF Route > Fe 500 IS 1786 > Price (basic, not GST). **Note**: Fe 500D entry appears first — skip it and use the Fe 500 (not Fe 500D) entry
 - **TMT NCR**: Ex-Delhi/NCR > 12-25mm IF Route > Fe 500 IS 1786 > Price (basic, not GST)
 
 ## Step 4: Display Results

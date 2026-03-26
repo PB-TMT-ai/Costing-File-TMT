@@ -157,6 +157,11 @@ def _auto_push(output_path, log_path, report_date):
         msg = f"Update costing output for {report_date}"
         subprocess.run(["git", "commit", "-m", msg], check=True, capture_output=True)
 
+        # Skip push when SKIP_PUSH env var is set (for batch processing)
+        if os.environ.get("SKIP_PUSH"):
+            print(f"Committed locally (push skipped via SKIP_PUSH)", file=sys.stderr)
+            return
+
         # Push to main with retry
         for attempt in range(4):
             result = subprocess.run(

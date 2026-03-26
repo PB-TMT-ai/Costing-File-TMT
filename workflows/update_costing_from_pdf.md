@@ -103,7 +103,39 @@ output/
 | Tool | Purpose |
 |------|---------|
 | `tools/update_costing_file.py` | Updates cells, computes margins, saves to date folder, appends change log, applies formatting |
+| `tools/extract_all_pdfs.py` | Batch extraction: auto-discovers BigMint PDFs, extracts all 11 data points, outputs JSON |
 | `tools/format_output.py` | Professional formatting (auto-called by update tool, also usable standalone) |
+
+## Batch Processing (Multiple PDFs)
+
+To process multiple historical PDFs at once:
+
+1. **Extract all prices** using the batch tool:
+   ```bash
+   python tools/extract_all_pdfs.py
+   ```
+   This auto-discovers all `*BigMint*.pdf` files in both `data/` and the root directory, extracts 11 data points from each, and outputs JSON.
+
+2. **Delete the change log** to rebuild from scratch:
+   ```bash
+   rm output/change_log.xlsx
+   ```
+
+3. **Run the update tool for each date** in chronological order:
+   ```bash
+   SKIP_PUSH=1 python tools/update_costing_file.py "<base_excel>" \
+     --pallet-dri <val> ... --report-date <YYYY-MM-DD> ...
+   ```
+   Use `SKIP_PUSH=1` to skip the auto-push retry loop (~30s saved per run).
+
+4. **Push once** after all dates are processed:
+   ```bash
+   git add output/
+   git commit -m "Update costing output for all dates"
+   git push
+   ```
+
+**Why rebuild the change log?** The tool appends new date columns at the end. Processing historical dates out of order would result in non-chronological columns. Deleting and reprocessing in order produces a clean, chronological change log.
 
 ## Edge Cases
 - **Silico Manganese**: PDF reports in INR/ton — must divide by 1000 for the kg value in Excel
@@ -121,8 +153,14 @@ output/
 - The BigMint PDF has a consistent structure across daily reports — page numbers may shift but section headers remain stable
 - Sponge (India) table has two sub-columns: Sponge Iron (C-DRI) and Pellet Sponge (P-DRI) — read carefully
 - Melting Scrap section (DAP-Raipur, DAP-Mandi) is separate from Re-Rolling Scrap (Ex-Alang) — use the correct section
+- **Older PDFs (pre-2026) use "Ex-Raipur"/"Ex-Mandi" instead of "DAP-Raipur"/"DAP-Mandi"** in the Melting Scrap section — the extraction tool handles both
+- **PDF filenames vary**: standard format (`BigMint_Daily_Report_as_on_...`) and timestamp-prefixed format (`1737343182595_iffsptpf8_BigMint_...`) — both are valid
+- **HMS(80:20) may not be the first product** under a location in Melting Scrap — other products (CR Busheling, LMS, End Cutting) may appear first. Search up to 25 lines ahead
+- **Silico Manganese 25-150mm HC 60-14 may not be the first product** under Ex-Raipur — other grades (10-50mm, 60-15) may appear first. Search up to 15 lines ahead
+- **TMT Raipur has two entries**: Fe 500D appears first, then Fe 500 IS 1786. Use the Fe 500 (not Fe 500D) entry
 - Margins are auto-computed by replicating the Excel formula chain in Python — they stay in sync with workbook constants
 - All output cells must be plain numbers, never formulas — openpyxl formulas have no cached values and cause errors in Excel Online/GitHub preview
 - External links and comments from the source template cause "found a problem" errors — the tool strips them automatically
 - Output files are auto-pushed to `main` — no manual merge needed
 - Output file naming: `YYYYMMDD_Costing TMT.xlsx` — only Raipur and NCR tabs are kept
+- **Batch processing**: When processing historical PDFs, delete `change_log.xlsx` first and reprocess in chronological order. Use `SKIP_PUSH=1` to skip push retries during batch runs
