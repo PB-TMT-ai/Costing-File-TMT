@@ -26,9 +26,13 @@ Exit codes:
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
+import zipfile
 from datetime import datetime
+from xml.etree import ElementTree as ET
 
 import openpyxl
 from openpyxl.styles import Alignment, Font
@@ -48,6 +52,80 @@ LOG_ITEMS = [
     "Market price TMT",
     "Margin TMT",
 ]
+
+
+def _clean_xlsx(filepath):
+    """Remove external links, comments, and VML drawings from xlsx to prevent Excel errors."""
+    skip_prefixes = (
+        "xl/externalLinks/",
+        "xl/comments/",
+        "xl/drawings/commentsDrawing",
+    )
+
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".xlsx")
+    os.close(tmp_fd)
+
+    # Collect IDs of external link relationships to also strip from workbook.xml
+    ext_link_ids = set()
+
+    with zipfile.ZipFile(filepath, "r") as zin, zipfile.ZipFile(tmp_path, "w") as zout:
+        # First pass: find external link rel IDs
+        if "xl/_rels/workbook.xml.rels" in zin.namelist():
+            rels_data = zin.read("xl/_rels/workbook.xml.rels")
+            rels_root = ET.fromstring(rels_data)
+            for el in rels_root:
+                target = el.get("Target", "")
+                if "externalLink" in target:
+                    ext_link_ids.add(el.get("Id", ""))
+
+        for item in zin.infolist():
+            if any(item.filename.startswith(p) for p in skip_prefixes):
+                continue
+            data = zin.read(item.filename)
+
+            # Strip externalLink relationships from workbook.xml.rels
+            if item.filename == "xl/_rels/workbook.xml.rels":
+                root = ET.fromstring(data)
+                root[:] = [
+                    el for el in root
+                    if "externalLink" not in el.get("Target", "")
+                ]
+                data = ET.tostring(root, xml_declaration=True, encoding="UTF-8")
+
+            # Strip externalLink references from [Content_Types].xml
+            if item.filename == "[Content_Types].xml":
+                root = ET.fromstring(data)
+                root[:] = [
+                    el for el in root
+                    if "externalLink" not in el.get("PartName", "")
+                    and "comment" not in el.get("PartName", "").lower()
+                    and "commentsDrawing" not in el.get("PartName", "")
+                ]
+                data = ET.tostring(root, xml_declaration=True, encoding="UTF-8")
+
+            # Strip externalReferences from workbook.xml
+            if item.filename == "xl/workbook.xml":
+                root = ET.fromstring(data)
+                ns = {"ns": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+                for ext_refs in root.findall("ns:externalReferences", ns):
+                    root.remove(ext_refs)
+                data = ET.tostring(root, xml_declaration=True, encoding="UTF-8")
+
+            # Strip comment/drawing rels from sheet rels
+            if item.filename.startswith("xl/worksheets/_rels/"):
+                root = ET.fromstring(data)
+                root[:] = [
+                    el for el in root
+                    if "comment" not in el.get("Target", "").lower()
+                    and "commentsDrawing" not in el.get("Target", "")
+                    and "vmlDrawing" not in el.get("Type", "")
+                ]
+                data = ET.tostring(root, xml_declaration=True, encoding="UTF-8")
+
+            zout.writestr(item, data)
+
+    shutil.move(tmp_path, filepath)
+    print("Cleaned: removed external links and comments from xlsx", file=sys.stderr)
 
 
 def _verify_no_formulas(filepath):
@@ -551,6 +629,7 @@ def main():
         format_ncr(wb["NCR"])
 
     wb.save(output_path)
+    _clean_xlsx(output_path)
     print(f"Saved to: {output_path}", file=sys.stderr)
 
     # Safety check: fail if any formulas leaked through
