@@ -9,8 +9,9 @@ user-invocable: false
 ## Critical Rules
 
 1. **Zero formulas** — All output Excel cells must be pre-computed numbers. Never write formula strings (`=...`). The tool verifies this after save.
-2. **All work on main** — No feature branches. Output auto-pushes to `main` after every run.
-3. **File chaining** — Always use the most recent output as base, not the original template.
+2. **Clean xlsx** — External links, comments, and VML drawings are stripped from the output to prevent "found a problem with content" errors in Excel.
+3. **All work on main** — No feature branches. Output auto-pushes to `main` after every run.
+4. **File chaining** — Always use the most recent output as base, not the original template.
 
 ## Data Point Mapping (11 points)
 

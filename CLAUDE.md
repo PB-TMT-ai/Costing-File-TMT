@@ -29,6 +29,8 @@ Use `/update-costing` or follow `workflows/update_costing_from_pdf.md`.
 
 **Computed values**: All formula cells (costs, margins, NCR cross-refs) are computed in Python and written as plain numbers. A safety check verifies zero formulas remain after save.
 
+**Clean xlsx**: External links, comments, and VML drawings are stripped from the output xlsx to prevent "found a problem with content" errors in Excel.
+
 **Margins**: The tool auto-computes Nett Margin (Billet) and Margin (TMT) for both Raipur and NCR, logged in the change log.
 
 **Formatting**: Professional Excel formatting is auto-applied (colour-coded sections, number formats, frozen panes).

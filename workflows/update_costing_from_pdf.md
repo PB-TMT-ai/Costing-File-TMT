@@ -62,7 +62,8 @@ Each daily update chains from the previous day's output:
    ```
    The tool will automatically:
    - Compute all values in Python (zero Excel formulas — prevents errors)
-   - Verify no formulas leaked into the output (safety check)
+   - Clean the xlsx (strip external links, comments, VML drawings)
+   - Verify no formulas leaked into the output (safety check — exits with error if any found)
    - Save to `output/YYYY-MM-DD/YYYYMMDD_Costing TMT.xlsx`
    - Remove extra tabs (keeps only Raipur and NCR)
    - Compute Nett Margin Billet and Margin TMT for both markets
@@ -109,6 +110,7 @@ output/
 - **NCR Scrap & Billet**: −500 adjustment is computed in Python and written as a plain number (no formulas)
 - **NCR other inputs**: DRI, Pig Iron, Silico Mn are computed from Raipur values (+3100 or same) and written directly — no cross-sheet formulas
 - **No Excel formulas**: All cells are pre-computed values. The tool verifies this after save and fails if any formula leaks through
+- **Clean xlsx**: External links, comments, and VML drawings from the source template are stripped automatically — prevents "found a problem with content" errors
 - **Auto-push**: Output files are auto-committed and pushed to `main` after every run
 - **Date format**: Must be passed as YYYY-MM-DD string to the tool
 - **PDF table structure**: Prices are in the "Price" column. Ignore "Change", "W-O-W", "1M", "3M" columns
@@ -121,5 +123,6 @@ output/
 - Melting Scrap section (DAP-Raipur, DAP-Mandi) is separate from Re-Rolling Scrap (Ex-Alang) — use the correct section
 - Margins are auto-computed by replicating the Excel formula chain in Python — they stay in sync with workbook constants
 - All output cells must be plain numbers, never formulas — openpyxl formulas have no cached values and cause errors in Excel Online/GitHub preview
+- External links and comments from the source template cause "found a problem" errors — the tool strips them automatically
 - Output files are auto-pushed to `main` — no manual merge needed
 - Output file naming: `YYYYMMDD_Costing TMT.xlsx` — only Raipur and NCR tabs are kept

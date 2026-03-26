@@ -26,6 +26,13 @@ Open `output/<date>/YYYYMMDD_Costing TMT.xlsx` using openpyxl and check:
 ### Zero Formulas Check (CRITICAL)
 Scan every cell in both sheets. If ANY cell value is a string starting with `=`, this is a **FAIL**. All cells must be pre-computed numbers or text labels.
 
+### Clean xlsx Check
+Inspect the xlsx zip contents. These should NOT exist:
+- `xl/externalLinks/` (broken external workbook references)
+- `xl/comments/` (author comments from template)
+- `xl/drawings/commentsDrawing*.vml` (VML comment drawings)
+If any are found, this is a **FAIL** — the cleaning step was skipped.
+
 ### Raipur Tab — Values
 | Cell | Item | Expected Type |
 |------|------|--------------|

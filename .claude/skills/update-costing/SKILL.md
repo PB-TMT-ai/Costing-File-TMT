@@ -99,6 +99,7 @@ python tools/update_costing_file.py "<base_excel_path>" \
 
 The tool automatically:
 - Computes all values in Python (zero Excel formulas)
+- Cleans the xlsx (strips external links, comments, VML drawings)
 - Verifies no formulas leaked (safety check — fails if any found)
 - Saves formatted output to `output/YYYY-MM-DD/YYYYMMDD_Costing TMT.xlsx`
 - Removes extra tabs (keeps only Raipur and NCR)
@@ -106,6 +107,7 @@ The tool automatically:
 - Auto-commits and pushes to `main` on GitHub
 
 After the tool runs, confirm the output shows:
+- "Cleaned: removed external links and comments from xlsx"
 - "Verified: 0 formulas in output"
 - "Pushed to main successfully"
 - Correct margin values for both Raipur and NCR

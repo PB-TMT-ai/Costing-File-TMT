@@ -70,4 +70,5 @@ Costing-File-TMT/
 - **Zero formulas in output** — All cells are pre-computed numbers. Prevents errors in Excel Online / GitHub preview.
 - **Auto-push to main** — Output files commit and push automatically after each run. No manual merge needed.
 - **Safety check** — Tool scans output after save and fails if any formula strings remain.
+- **Clean xlsx** — External links, comments, and stale references are stripped to prevent Excel errors.
 - **File chaining** — Each day's update builds on the previous output, not the original template.
