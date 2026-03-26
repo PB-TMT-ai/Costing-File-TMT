@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Generate a PowerPoint presentation with month-on-month change graphs from the costing change log.
+"""Generate a JSW One branded PowerPoint with month-on-month change bar charts.
+
+Uses matplotlib for chart rendering (as images) and python-pptx for slide
+layout with JSW One branding (logo, divider, colors, Calibri font).
 
 Usage:
-    python tools/create_material_change_graph.py [--input <change_log_path>] [--output <pptx_path>]
+    python tools/create_material_change_graph.py [--input <path>] [--output <path>]
 
 Exit codes:
     0 -- Success
@@ -16,6 +19,7 @@ import shutil
 import sys
 import tempfile
 from datetime import datetime
+from pathlib import Path
 
 try:
     import matplotlib
@@ -31,13 +35,57 @@ try:
     from pptx.util import Inches, Pt, Emu
     from pptx.dml.color import RGBColor
     from pptx.enum.text import PP_ALIGN
+    from pptx.enum.shapes import MSO_SHAPE
 except ImportError:
     print("ERROR: python-pptx not installed. Run: pip install python-pptx", file=sys.stderr)
     sys.exit(1)
 
 import openpyxl
 
-# Graph specifications: item name, row in change log, markets to show, unit
+# ═══════════════════════════════════════════════════════════════
+# JSW ONE BRAND CONSTANTS
+# ═══════════════════════════════════════════════════════════════
+JSW_BLUE = RGBColor(0x21, 0x33, 0x66)
+JSW_RED = RGBColor(0xEA, 0x21, 0x27)
+JSW_GREY = RGBColor(0x7F, 0x7F, 0x7F)
+JSW_LTGREY = RGBColor(0xF2, 0xF2, 0xF2)
+JSW_BORDER = RGBColor(0xCC, 0xCC, 0xCC)
+JSW_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+JSW_BLACK = RGBColor(0x00, 0x00, 0x00)
+
+# Matplotlib hex colors matching JSW One palette
+MPL_BLUE = "#213366"
+MPL_GREY = "#7F7F7F"
+MPL_LTGREY = "#F2F2F2"
+MPL_BLUE_LIGHT = "#4A6A9E"
+
+FONT_NAME = "Calibri"
+
+# Slide dimensions (LAYOUT_WIDE)
+SLIDE_W = Inches(13.333)
+SLIDE_H = Inches(7.5)
+
+# Grid constants
+GRID_L = 0.50
+GRID_W = 12.33
+GRID_TOP = 0.95
+GRID_BOTTOM = 6.80
+GRID_H = 5.85
+FOOTER_Y = 7.05
+
+# Logo path
+LOGO_PATH = None
+for p in [
+    Path(__file__).parent.parent / ".claude" / "skills" / "jsw-one-pptx" / "assets" / "JSW_Logo_Clean.png",
+    Path(__file__).parent.parent / ".claude" / "skills" / "jsw-one-pptx" / "assets" / "JSW_Logo_Final.png",
+]:
+    if p.exists():
+        LOGO_PATH = str(p)
+        break
+
+# ═══════════════════════════════════════════════════════════════
+# GRAPH SPECIFICATIONS
+# ═══════════════════════════════════════════════════════════════
 GRAPH_SPECS = [
     {"item": "Pallet DRI",         "row": 3,  "markets": ["Raipur"],        "unit": "INR/MT"},
     {"item": "Pig Iron",           "row": 4,  "markets": ["Raipur"],        "unit": "INR/MT"},
@@ -50,62 +98,36 @@ GRAPH_SPECS = [
     {"item": "Margin TMT (NCR)",            "row": 12, "markets": ["NCR"],    "market_key": "NCR",    "unit": "INR/MT"},
 ]
 
-# Colors
-COLOR_RAIPUR = "#1565C0"
-COLOR_NCR = "#FF8F00"
-COLOR_POS = "#4CAF50"
-COLOR_NEG = "#F44336"
-COLOR_AVG_RAIPUR = "#0D47A1"
-COLOR_AVG_NCR = "#E65100"
-COLOR_AVG_SINGLE = "#1A237E"
-
-
+# ═══════════════════════════════════════════════════════════════
+# DATA LOADING
+# ═══════════════════════════════════════════════════════════════
 def load_change_log(path):
-    """Load change log data from Excel file.
-
-    Returns:
-        dates: list of date strings
-        data: dict {item_name: {"Raipur": [float|None, ...], "NCR": [float|None, ...]}}
-    """
     wb = openpyxl.load_workbook(path)
     ws = wb["Change Log"]
-
-    # Collect dates from row 1 (even columns starting at 2)
-    dates = []
-    date_cols = []
+    dates, date_cols = [], []
     for col in range(2, ws.max_column + 1, 2):
         val = ws.cell(row=1, column=col).value
         if val is not None:
             dates.append(str(val))
             date_cols.append(col)
-
-    # Parse data for each unique row in graph specs
-    data = {}
-    seen_rows = {}
+    data, seen_rows = {}, {}
     for spec in GRAPH_SPECS:
         row = spec["row"]
         if row in seen_rows:
-            # Reuse already-parsed data for duplicate rows (e.g. margins split by market)
             data[spec["item"]] = seen_rows[row]
             continue
-        raipur_vals = []
-        ncr_vals = []
+        r_vals, n_vals = [], []
         for col in date_cols:
-            # Raipur is in even column, NCR in odd (col+1)
-            r_val = ws.cell(row=row, column=col).value
-            n_val = ws.cell(row=row, column=col + 1).value
-            raipur_vals.append(_parse_value(r_val))
-            ncr_vals.append(_parse_value(n_val))
-        row_data = {"Raipur": raipur_vals, "NCR": ncr_vals}
+            r_vals.append(_parse_value(ws.cell(row=row, column=col).value))
+            n_vals.append(_parse_value(ws.cell(row=row, column=col + 1).value))
+        row_data = {"Raipur": r_vals, "NCR": n_vals}
         seen_rows[row] = row_data
         data[spec["item"]] = row_data
-
     wb.close()
     return dates, data
 
 
 def _parse_value(val):
-    """Convert cell value to float, returning None for '-' or empty."""
     if val is None or str(val).strip() in ("-", ""):
         return None
     try:
@@ -115,29 +137,19 @@ def _parse_value(val):
 
 
 def compute_changes(values, dates):
-    """Compute month-on-month absolute changes.
-
-    Returns:
-        changes: list of floats (length n-1)
-        labels: list of period label strings (length n-1)
-        avg: average of changes (float)
-    """
-    changes = []
-    labels = []
+    changes, labels = [], []
     for i in range(1, len(values)):
         if values[i] is not None and values[i - 1] is not None:
             changes.append(values[i] - values[i - 1])
         else:
             changes.append(None)
         labels.append(_format_date_label(dates[i]))
-
     valid = [c for c in changes if c is not None]
     avg = sum(valid) / len(valid) if valid else 0
     return changes, labels, avg
 
 
 def _format_date_label(date_str):
-    """Format date string to abbreviated label like \"Jan'25\"."""
     try:
         dt = datetime.strptime(date_str, "%Y-%m-%d")
         return dt.strftime("%b'%y")
@@ -145,269 +157,276 @@ def _format_date_label(date_str):
         return date_str[:7]
 
 
+# ═══════════════════════════════════════════════════════════════
+# CHART IMAGE GENERATION (matplotlib with JSW One colors)
+# ═══════════════════════════════════════════════════════════════
 def create_chart_image(spec, dates, data, tmp_dir):
-    """Create a bar chart image for a single item and save as PNG."""
     item = spec["item"]
     markets = spec["markets"]
     unit = spec["unit"]
-    is_dual = len(markets) == 2
+    is_dual = len(markets) == 2 and "market_key" not in spec
 
-    fig, ax = plt.subplots(figsize=(12, 5.5), dpi=150)
+    fig, ax = plt.subplots(figsize=(12.33, 5.0), dpi=150)
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
 
     if is_dual:
         _plot_dual_market(ax, spec, dates, data)
     else:
         _plot_single_market(ax, spec, dates, data)
 
-    ax.set_title(f"Month-on-Month Change: {item}", fontsize=16, fontweight="bold", pad=15)
-    ax.set_ylabel(f"Change ({unit})", fontsize=12)
-    ax.axhline(y=0, color="gray", linewidth=0.5)
-    ax.grid(axis="y", alpha=0.3, linestyle="--")
-    ax.tick_params(axis="x", rotation=45)
+    ax.set_ylabel(f"Change ({unit})", fontsize=11, color=MPL_GREY)
+    ax.axhline(y=0, color=MPL_GREY, linewidth=0.5)
+    ax.grid(axis="y", alpha=0.25, linestyle="--", color="#CCCCCC")
+    ax.tick_params(axis="x", rotation=45, labelsize=10)
+    ax.tick_params(axis="y", labelsize=10, colors=MPL_GREY)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#CCCCCC")
+    ax.spines["bottom"].set_color("#CCCCCC")
 
     plt.tight_layout()
     path = os.path.join(tmp_dir, f"{item.replace(' ', '_')}.png")
-    fig.savefig(path, bbox_inches="tight", facecolor="white")
+    fig.savefig(path, bbox_inches="tight", facecolor="white", dpi=150)
     plt.close(fig)
     return path
 
 
 def _plot_single_market(ax, spec, dates, data):
-    """Plot bar chart for a single market."""
     item = spec["item"]
     market_key = spec.get("market_key", "Raipur")
     values = data[item][market_key]
     changes, labels, avg = compute_changes(values, dates)
 
     x = range(len(labels))
-    colors = []
-    plot_changes = []
-    for c in changes:
-        if c is None:
-            plot_changes.append(0)
-            colors.append("lightgray")
-        elif c >= 0:
-            plot_changes.append(c)
-            colors.append(COLOR_POS)
-        else:
-            plot_changes.append(c)
-            colors.append(COLOR_NEG)
+    plot_changes = [c if c is not None else 0 for c in changes]
 
-    bars = ax.bar(x, plot_changes, color=colors, width=0.6, edgecolor="white", linewidth=0.5)
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, fontsize=9)
+    bars = ax.bar(x, plot_changes, color=MPL_BLUE, width=0.6,
+                  edgecolor="white", linewidth=0.5)
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(labels, fontsize=10, fontfamily="sans-serif")
 
-    # Value labels on bars
     _add_bar_labels(ax, bars, plot_changes, spec)
 
     # Average line
-    ax.axhline(y=avg, color=COLOR_AVG_SINGLE, linewidth=1.5, linestyle="--", alpha=0.8)
+    ax.axhline(y=avg, color=MPL_BLUE_LIGHT, linewidth=1.5, linestyle="--", alpha=0.8)
     ax.annotate(
         f"Avg: {_fmt_val(avg, spec)}",
-        xy=(len(labels) - 1, avg),
-        fontsize=10,
-        fontweight="bold",
-        color=COLOR_AVG_SINGLE,
-        ha="right",
+        xy=(len(labels) - 1, avg), fontsize=10, fontweight="bold",
+        color=MPL_BLUE, ha="right",
         va="bottom" if avg >= 0 else "top",
     )
 
 
 def _plot_dual_market(ax, spec, dates, data):
-    """Plot grouped bar chart for two markets."""
     item = spec["item"]
     r_values = data[item]["Raipur"]
     n_values = data[item]["NCR"]
-
     r_changes, labels, r_avg = compute_changes(r_values, dates)
     n_changes, _, n_avg = compute_changes(n_values, dates)
 
     x = list(range(len(labels)))
     width = 0.35
-
     r_plot = [c if c is not None else 0 for c in r_changes]
     n_plot = [c if c is not None else 0 for c in n_changes]
 
     x_r = [xi - width / 2 for xi in x]
     x_n = [xi + width / 2 for xi in x]
 
-    bars_r = ax.bar(x_r, r_plot, width=width, color=COLOR_RAIPUR, label="Raipur",
-                    edgecolor="white", linewidth=0.5, alpha=0.85)
-    bars_n = ax.bar(x_n, n_plot, width=width, color=COLOR_NCR, label="NCR",
-                    edgecolor="white", linewidth=0.5, alpha=0.85)
+    bars_r = ax.bar(x_r, r_plot, width=width, color=MPL_BLUE, label="Raipur",
+                    edgecolor="white", linewidth=0.5)
+    bars_n = ax.bar(x_n, n_plot, width=width, color=MPL_GREY, label="NCR",
+                    edgecolor="white", linewidth=0.5)
 
     ax.set_xticks(x)
-    ax.set_xticklabels(labels, fontsize=9)
+    ax.set_xticklabels(labels, fontsize=10, fontfamily="sans-serif")
 
-    # Value labels
     _add_bar_labels(ax, bars_r, r_plot, spec, fontsize=7)
     _add_bar_labels(ax, bars_n, n_plot, spec, fontsize=7)
 
-    # Average lines
-    ax.axhline(y=r_avg, color=COLOR_AVG_RAIPUR, linewidth=1.5, linestyle="--", alpha=0.7)
-    ax.axhline(y=n_avg, color=COLOR_AVG_NCR, linewidth=1.5, linestyle="--", alpha=0.7)
+    ax.axhline(y=r_avg, color=MPL_BLUE, linewidth=1.5, linestyle="--", alpha=0.6)
+    ax.axhline(y=n_avg, color=MPL_GREY, linewidth=1.5, linestyle="--", alpha=0.6)
 
-    ax.annotate(
-        f"Raipur Avg: {_fmt_val(r_avg, spec)}",
-        xy=(0, r_avg),
-        fontsize=9,
-        fontweight="bold",
-        color=COLOR_AVG_RAIPUR,
-        va="bottom" if r_avg >= 0 else "top",
-    )
-    ax.annotate(
-        f"NCR Avg: {_fmt_val(n_avg, spec)}",
-        xy=(len(labels) - 1, n_avg),
-        fontsize=9,
-        fontweight="bold",
-        color=COLOR_AVG_NCR,
-        ha="right",
-        va="bottom" if n_avg >= 0 else "top",
-    )
+    ax.annotate(f"Raipur avg: {_fmt_val(r_avg, spec)}", xy=(0, r_avg),
+                fontsize=9, fontweight="bold", color=MPL_BLUE,
+                va="bottom" if r_avg >= 0 else "top")
+    ax.annotate(f"NCR avg: {_fmt_val(n_avg, spec)}", xy=(len(labels) - 1, n_avg),
+                fontsize=9, fontweight="bold", color=MPL_GREY, ha="right",
+                va="bottom" if n_avg >= 0 else "top")
 
-    ax.legend(loc="upper left", fontsize=10)
+    ax.legend(loc="upper left", fontsize=10, framealpha=0.9)
 
 
 def _add_bar_labels(ax, bars, values, spec, fontsize=8):
-    """Add value labels on top of bars."""
     for bar, val in zip(bars, values):
         if val == 0:
             continue
         y = bar.get_height()
         va = "bottom" if y >= 0 else "top"
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            y,
-            _fmt_val(val, spec),
-            ha="center",
-            va=va,
-            fontsize=fontsize,
-            fontweight="bold",
-        )
+        ax.text(bar.get_x() + bar.get_width() / 2, y, _fmt_val(val, spec),
+                ha="center", va=va, fontsize=fontsize, fontweight="bold",
+                color=MPL_BLUE if val >= 0 else "#8B0000")
 
 
 def _fmt_val(val, spec):
-    """Format a value for display based on the item's unit."""
-    if spec["item"] == "Silico Manganese":
+    if "Silico Manganese" in spec["item"]:
         return f"{val:+.1f}"
     if abs(val) >= 1:
         return f"{val:+,.0f}"
     return f"{val:+.2f}"
 
 
+# ═══════════════════════════════════════════════════════════════
+# JSW ONE BRANDED SLIDE HELPERS (python-pptx)
+# ═══════════════════════════════════════════════════════════════
+def _add_divider(slide, y_inches):
+    """Blue + red divider bar."""
+    # Blue segment (left ~66%)
+    shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(y_inches),
+                                   Inches(8.80), Inches(0.05))
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = JSW_BLUE
+    shape.line.fill.background()
+    # Red segment (right ~36%, overlapping)
+    shape2 = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(8.40), Inches(y_inches),
+                                    Inches(4.93), Inches(0.05))
+    shape2.fill.solid()
+    shape2.fill.fore_color.rgb = JSW_RED
+    shape2.line.fill.background()
+
+
+def _add_logo(slide, slide_type="content"):
+    if not LOGO_PATH:
+        return
+    if slide_type == "title":
+        slide.shapes.add_picture(LOGO_PATH, Inches(10.30), Inches(2.10),
+                                 Inches(2.40), Inches(0.79))
+    else:
+        slide.shapes.add_picture(LOGO_PATH, Inches(10.80), Inches(0.02),
+                                 Inches(2.10), Inches(0.69))
+
+
+def _add_page_number(slide, num):
+    txBox = slide.shapes.add_textbox(Inches(0.30), Inches(FOOTER_Y),
+                                     Inches(0.50), Inches(0.35))
+    p = txBox.text_frame.paragraphs[0]
+    p.text = str(num)
+    p.font.size = Pt(10)
+    p.font.name = FONT_NAME
+    p.font.color.rgb = JSW_GREY
+
+
+def _add_source(slide, text):
+    txBox = slide.shapes.add_textbox(Inches(6.50), Inches(FOOTER_Y),
+                                     Inches(6.30), Inches(0.35))
+    p = txBox.text_frame.paragraphs[0]
+    p.text = text
+    p.font.size = Pt(10)
+    p.font.name = FONT_NAME
+    p.font.color.rgb = JSW_GREY
+    p.font.italic = True
+    p.alignment = PP_ALIGN.RIGHT
+
+
+def _add_text(slide, x, y, w, h, text, size=12, bold=False, color=None, align=PP_ALIGN.LEFT):
+    txBox = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.text = text
+    p.font.size = Pt(size)
+    p.font.name = FONT_NAME
+    p.font.bold = bold
+    p.font.color.rgb = color or JSW_BLACK
+    p.alignment = align
+    return txBox
+
+
+# ═══════════════════════════════════════════════════════════════
+# SLIDE BUILDERS
+# ═══════════════════════════════════════════════════════════════
 def build_presentation(chart_paths, specs, dates, output_path):
-    """Build a PowerPoint presentation with chart images."""
     prs = Presentation()
-    # Set widescreen 16:9
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
 
-    # Title slide
-    _add_title_slide(prs, dates)
+    page = 1
+    _add_title_slide(prs, dates, page)
+    page += 1
 
-    # Chart slides
     for chart_path, spec in zip(chart_paths, specs):
-        _add_chart_slide(prs, chart_path, spec)
+        _add_chart_slide(prs, chart_path, spec, page)
+        page += 1
 
     prs.save(output_path)
     print(f"Presentation saved: {output_path}", file=sys.stderr)
 
 
-def _add_title_slide(prs, dates):
-    """Add the title slide."""
-    slide_layout = prs.slide_layouts[6]  # Blank layout
-    slide = prs.slides.add_slide(slide_layout)
+def _add_title_slide(prs, dates, page_num):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])  # Blank
 
-    # Title
-    txBox = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(11.333), Inches(1.5))
-    tf = txBox.text_frame
-    tf.word_wrap = True
-    p = tf.paragraphs[0]
-    p.text = "Material Cost Change Analysis"
-    p.font.size = Pt(36)
-    p.font.bold = True
-    p.font.color.rgb = RGBColor(0x15, 0x65, 0xC0)
-    p.alignment = PP_ALIGN.CENTER
-
-    # Subtitle
-    txBox2 = slide.shapes.add_textbox(Inches(1), Inches(3.8), Inches(11.333), Inches(1))
-    tf2 = txBox2.text_frame
-    tf2.word_wrap = True
-    p2 = tf2.paragraphs[0]
-    p2.text = f"Month-on-Month Absolute Change (INR)"
-    p2.font.size = Pt(20)
-    p2.font.color.rgb = RGBColor(0x42, 0x42, 0x42)
-    p2.alignment = PP_ALIGN.CENTER
-
-    # Date range
-    txBox3 = slide.shapes.add_textbox(Inches(1), Inches(4.8), Inches(11.333), Inches(0.8))
-    tf3 = txBox3.text_frame
-    tf3.word_wrap = True
-    p3 = tf3.paragraphs[0]
-    p3.text = f"Period: {dates[0]} to {dates[-1]}  |  {len(dates)} data points"
-    p3.font.size = Pt(16)
-    p3.font.color.rgb = RGBColor(0x75, 0x75, 0x75)
-    p3.alignment = PP_ALIGN.CENTER
-
-    # Generated date
-    txBox4 = slide.shapes.add_textbox(Inches(1), Inches(6), Inches(11.333), Inches(0.5))
-    tf4 = txBox4.text_frame
-    p4 = tf4.paragraphs[0]
-    p4.text = f"Generated: {datetime.now().strftime('%Y-%m-%d')}"
-    p4.font.size = Pt(12)
-    p4.font.color.rgb = RGBColor(0x9E, 0x9E, 0x9E)
-    p4.alignment = PP_ALIGN.CENTER
+    _add_text(slide, 0.60, 1.90, 9.40, 1.00,
+              "Material cost change analysis",
+              size=28, bold=True, color=JSW_BLUE)
+    _add_divider(slide, 2.95)
+    _add_logo(slide, "title")
+    _add_text(slide, 0.64, 3.12, 9.40, 0.45,
+              "Month-on-month absolute change (INR) for key raw materials and margins",
+              size=12, color=JSW_GREY)
+    _add_text(slide, 0.64, 3.52, 9.40, 0.35,
+              f"Period: {dates[0]} to {dates[-1]}  |  {len(dates)} data points",
+              size=12, color=JSW_GREY)
+    _add_text(slide, 0.64, 4.00, 9.40, 0.35,
+              f"Generated: {datetime.now().strftime('%Y-%m-%d')}",
+              size=12, color=JSW_GREY)
+    _add_page_number(slide, page_num)
 
 
-def _add_chart_slide(prs, chart_path, spec):
-    """Add a slide with a chart image."""
-    slide_layout = prs.slide_layouts[6]  # Blank
-    slide = prs.slides.add_slide(slide_layout)
+def _add_chart_slide(prs, chart_path, spec, page_num):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])  # Blank
 
-    # Title bar
-    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(12.333), Inches(0.6))
-    tf = txBox.text_frame
-    p = tf.paragraphs[0]
+    # Slide heading
     if "market_key" in spec:
-        p.text = f"{spec['item']} - {spec['unit']}"
+        title = f"{spec['item']} — {spec['unit']}"
     else:
-        markets_str = " & ".join(spec["markets"])
-        p.text = f"{spec['item']} ({markets_str}) - {spec['unit']}"
-    p.font.size = Pt(18)
-    p.font.bold = True
-    p.font.color.rgb = RGBColor(0x21, 0x21, 0x21)
-    p.alignment = PP_ALIGN.LEFT
+        title = f"{spec['item']} ({' & '.join(spec['markets'])}) — {spec['unit']}"
 
-    # Chart image - fill most of the slide
-    slide.shapes.add_picture(chart_path, Inches(0.3), Inches(0.9), Inches(12.7), Inches(6.3))
+    _add_text(slide, GRID_L, 0.10, 10.05, 0.58,
+              title, size=20, bold=True, color=JSW_BLUE)
+
+    _add_divider(slide, 0.75)
+    _add_logo(slide, "content")
+
+    # Chart image — fills content area
+    slide.shapes.add_picture(chart_path,
+                             Inches(GRID_L), Inches(GRID_TOP),
+                             Inches(GRID_W), Inches(GRID_H))
+
+    _add_page_number(slide, page_num)
+    _add_source(slide, "Source: Costing change log")
 
 
+# ═══════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════
 def main():
-    parser = argparse.ArgumentParser(description="Generate material change graph PowerPoint")
-    parser.add_argument(
-        "--input", "-i",
-        default="output/change_log.xlsx",
-        help="Path to change_log.xlsx (default: output/change_log.xlsx)",
-    )
-    parser.add_argument(
-        "--output", "-o",
-        default="output/material_change_graphs.pptx",
-        help="Output PPTX path (default: output/material_change_graphs.pptx)",
-    )
+    parser = argparse.ArgumentParser(description="Generate JSW One branded material change graph PowerPoint")
+    parser.add_argument("--input", "-i", default="output/change_log.xlsx",
+                        help="Path to change_log.xlsx")
+    parser.add_argument("--output", "-o", default="output/material_change_graphs.pptx",
+                        help="Output PPTX path")
     args = parser.parse_args()
 
     if not os.path.exists(args.input):
         print(f"ERROR: Input file not found: {args.input}", file=sys.stderr)
         sys.exit(2)
 
-    # Ensure output directory exists
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
 
     print(f"Loading change log: {args.input}", file=sys.stderr)
     dates, data = load_change_log(args.input)
     print(f"Found {len(dates)} dates: {dates[0]} to {dates[-1]}", file=sys.stderr)
 
-    # Generate chart images
     tmp_dir = tempfile.mkdtemp(prefix="material_charts_")
     chart_paths = []
     try:
@@ -416,7 +435,6 @@ def main():
             path = create_chart_image(spec, dates, data, tmp_dir)
             chart_paths.append(path)
 
-        # Build presentation
         build_presentation(chart_paths, GRAPH_SPECS, dates, args.output)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
