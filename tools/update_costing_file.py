@@ -225,62 +225,205 @@ def update_change_log(args, margins):
     print(f"Change log updated: {log_path}", file=sys.stderr)
 
 
+def _compute_tab(ws, rate_cells, is_ncr=False):
+    """Compute all formula cells in a tab and write values directly.
+
+    rate_cells is a dict of cell->value for the rate/input cells that were updated.
+    Reads constants (consumption, recovery, operating costs) from the sheet.
+    """
+    # Column mapping: Raipur uses cols B-I, NCR uses cols A-H
+    # Rate col: E (Raipur), D (NCR)
+    # Cost col: F (both)
+    # Recovery col: G (Raipur), F (NCR)
+    # Effective col: H (Raipur), G (NCR)
+    # Total col: I (Raipur), H (NCR)
+    if is_ncr:
+        r_col, f_col, g_col, h_col, t_col = "D", "E", "F", "G", "H"
+    else:
+        r_col, f_col, g_col, h_col, t_col = "E", "F", "G", "H", "I"
+
+    # --- Section 1: Raw material rows (7-11) ---
+    total_cost = 0
+    for row in range(7, 12):
+        rate = _cell_val(ws, f"{r_col}{row}")
+        cons = _cell_val(ws, f"{'C' if not is_ncr else 'B'}{row}")
+        recov = _cell_val(ws, f"{g_col}{row}", 1)
+        unit = ws[f"{'D' if not is_ncr else 'C'}{row}"].value
+
+        if unit == "kg":
+            cost = rate * cons
+        else:  # percentage
+            cost = rate * cons / 100
+
+        eff = cost / recov if recov != 0 else 0
+
+        ws[f"{f_col}{row}"] = round(cost, 2)
+        ws[f"{h_col}{row}"] = round(eff, 2)
+        ws[f"{t_col}{row}"] = round(eff, 2)
+        total_cost += eff
+
+    # --- Rows 12-14: Operating costs ---
+    # Power (row 12)
+    e12 = _cell_val(ws, f"{r_col}12")
+    c12 = _cell_val(ws, f"{'C' if not is_ncr else 'B'}12")
+    power = e12 * c12
+    ws[f"{f_col}12"] = round(power, 2)
+    ws[f"{t_col}12"] = round(power, 2)
+    total_cost += power
+
+    # Stores (row 13)
+    cons_col = "C" if not is_ncr else "B"
+    e13 = _cell_val(ws, f"{r_col}13")
+    c13 = _cell_val(ws, f"{cons_col}13")
+    f13 = e13 * c13
+    ws[f"{f_col}13"] = round(f13, 2)
+    i13 = _cell_val(ws, f"{t_col}13")
+    if i13 == 0:
+        i13 = f13
+    # Write computed value (replace any formula)
+    ws[f"{t_col}13"] = round(i13, 2)
+
+    # Manpower (row 14)
+    e14 = _cell_val(ws, f"{r_col}14")
+    ws[f"{f_col}14"] = round(e14, 2)
+    i14 = _cell_val(ws, f"{t_col}14")
+    if i14 == 0:
+        i14 = e14
+    ws[f"{t_col}14"] = round(i14, 2)
+
+    total_cost += i13 + i14
+
+    # --- Row 15: Billet Cost ---
+    ws[f"{t_col}15"] = round(total_cost, 2)
+    billet_cost = total_cost
+
+    # --- Row 16: Market price of Billet (already set as input) ---
+    billet_mkt = _cell_val(ws, f"{t_col}16")
+
+    # --- Row 17: Nett Margin ---
+    ws[f"{t_col}17"] = round(billet_mkt - billet_cost, 2)
+
+    # --- Section 2: Rolling Mill (rows 21-32) ---
+    # Row 21: Cost of Billet
+    ws["F21"] = round(billet_cost, 2)
+
+    # Row 22: Scale loss
+    c22 = _cell_val(ws, "C22") if not is_ncr else _cell_val(ws, "C22")
+    f22 = billet_cost * c22 / 100
+    ws["E22"] = round(billet_cost, 2)
+    ws["F22"] = round(f22, 2)
+
+    # Rows 23-26: Power, Stores, Manpower, Fuel
+    f23 = _cell_val(ws, "E23") * _cell_val(ws, "C23")
+    f24 = _cell_val(ws, "E24") * _cell_val(ws, "C24")
+    f25 = _cell_val(ws, "E25") * _cell_val(ws, "C25")
+    f26 = _cell_val(ws, "E26") * _cell_val(ws, "C26")
+    ws["F23"] = round(f23, 2)
+    ws["F24"] = round(f24, 2)
+    ws["F25"] = round(f25, 2)
+    ws["F26"] = round(f26, 2)
+
+    # Row 27: Cutting loss
+    f21_to_f26_sum = billet_cost + f22 + f23 + f24 + f25 + f26
+    c27 = _cell_val(ws, "C27")
+    f27 = f21_to_f26_sum * c27 / 100
+    ws["E27"] = round(f21_to_f26_sum, 2)
+    ws["F27"] = round(f27, 2)
+
+    # Row 28: Rolling cost = SUM(F22:F27)
+    f28 = f22 + f23 + f24 + f25 + f26 + f27
+    ws["F28"] = round(f28, 2)
+
+    # Row 29: Yield loss
+    f21_to_f27_sum = f21_to_f26_sum + f27
+    c29 = _cell_val(ws, "C29")
+    f29 = f21_to_f27_sum * c29 / 100
+    ws["E29"] = round(f21_to_f27_sum, 2)
+    ws["F29"] = round(f29, 2)
+
+    # Rows 30-31: Scrap recovery, Short length (already have values)
+    f30 = _cell_val(ws, "E30") * _cell_val(ws, "C30")
+    f31 = _cell_val(ws, "E31") * _cell_val(ws, "C31")
+    ws["F30"] = round(f30, 2)
+    ws["F31"] = round(f31, 2)
+
+    # Row 32: Interest + Depreciation (hardcoded)
+    f32 = _cell_val(ws, "F32")
+
+    # Row 33: Total cost = F28 + Billet Cost + F32
+    total_tmt_cost = f28 + billet_cost + f32
+    ws["F33"] = round(total_tmt_cost, 2)
+
+    # Row 34: Market price TMT (already set as input)
+    tmt_mkt = _cell_val(ws, "F34")
+
+    # Row 35: Margin = Market TMT - Total cost
+    ws["F35"] = round(tmt_mkt - total_tmt_cost, 2)
+
+    return billet_cost, total_tmt_cost
+
+
 def update_workbook(wb, args):
-    """Apply price updates to the workbook."""
+    """Apply price updates and compute all values (no formulas left)."""
     updates_applied = []
 
-    # --- Raipur Tab ---
-    ws_raipur = wb["Raipur"]
+    # --- Raipur Tab: Set inputs ---
+    ws_r = wb["Raipur"]
 
     if args.pallet_dri is not None:
-        ws_raipur["E7"] = args.pallet_dri
+        ws_r["E7"] = args.pallet_dri
         updates_applied.append(f"Raipur E7 (Pallet DRI): {args.pallet_dri}")
-
     if args.pig_iron is not None:
-        ws_raipur["E8"] = args.pig_iron
+        ws_r["E8"] = args.pig_iron
         updates_applied.append(f"Raipur E8 (Pig Iron): {args.pig_iron}")
-
     if args.scrap_raipur is not None:
-        ws_raipur["E9"] = args.scrap_raipur
+        ws_r["E9"] = args.scrap_raipur
         updates_applied.append(f"Raipur E9 (Scrap): {args.scrap_raipur}")
-
     if args.silico_mn is not None:
-        ws_raipur["E10"] = args.silico_mn
+        ws_r["E10"] = args.silico_mn
         updates_applied.append(f"Raipur E10 (Silico Mn): {args.silico_mn}")
-
     if args.iron_ore_dri is not None:
-        ws_raipur["E11"] = args.iron_ore_dri
+        ws_r["E11"] = args.iron_ore_dri
         updates_applied.append(f"Raipur E11 (Iron Ore DRI): {args.iron_ore_dri}")
-
     if args.report_date is not None:
         date_val = datetime.strptime(args.report_date, "%Y-%m-%d")
-        ws_raipur["C15"] = date_val
+        ws_r["C15"] = date_val
         updates_applied.append(f"Raipur C15 (Date): {args.report_date}")
-
     if args.billet_raipur is not None:
-        ws_raipur["I16"] = args.billet_raipur
+        ws_r["I16"] = args.billet_raipur
         updates_applied.append(f"Raipur I16 (Billet Mkt): {args.billet_raipur}")
-
     if args.tmt_raipur is not None:
-        ws_raipur["F34"] = args.tmt_raipur
+        ws_r["F34"] = args.tmt_raipur
         updates_applied.append(f"Raipur F34 (TMT Mkt): {args.tmt_raipur}")
 
-    # --- NCR Tab ---
-    ws_ncr = wb["NCR"]
+    # Compute all Raipur formula cells
+    _compute_tab(ws_r, {}, is_ncr=False)
+
+    # --- NCR Tab: Set inputs (write computed values, not formulas) ---
+    ws_n = wb["NCR"]
+
+    # NCR rates derived from Raipur
+    ws_n["D7"] = _cell_val(ws_r, "E7") + 3100
+    ws_n["D8"] = _cell_val(ws_r, "E8") + 3100
+    ws_n["D10"] = _cell_val(ws_r, "E10")
+    ws_n["D11"] = _cell_val(ws_r, "E11") + 3100
 
     if args.scrap_mandi is not None:
-        formula = f"={args.scrap_mandi}-500"
-        ws_ncr["D9"] = formula
-        updates_applied.append(f"NCR D9 (Scrap): {formula}")
-
+        ws_n["D9"] = args.scrap_mandi - 500
+        updates_applied.append(f"NCR D9 (Scrap): {args.scrap_mandi} - 500 = {args.scrap_mandi - 500}")
     if args.billet_mandi is not None:
-        formula = f"={args.billet_mandi}-500"
-        ws_ncr["H16"] = formula
-        updates_applied.append(f"NCR H16 (Billet Mkt): {formula}")
-
+        ws_n["H16"] = args.billet_mandi - 500
+        updates_applied.append(f"NCR H16 (Billet Mkt): {args.billet_mandi} - 500 = {args.billet_mandi - 500}")
     if args.tmt_ncr is not None:
-        ws_ncr["F34"] = args.tmt_ncr
+        ws_n["F34"] = args.tmt_ncr
         updates_applied.append(f"NCR F34 (TMT Mkt): {args.tmt_ncr}")
+
+    # NCR date and label from Raipur
+    ws_n["B15"] = ws_r["B15"].value
+    ws_n["C15"] = ws_r["C15"].value
+
+    # Compute all NCR formula cells
+    _compute_tab(ws_n, {}, is_ncr=True)
 
     return updates_applied
 
