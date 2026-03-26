@@ -60,6 +60,9 @@ Open `output/change_log.xlsx` and check:
 2. Raipur values match the Excel cells
 3. NCR values match (Scrap = D9 raw - 500, Billet = H16 raw - 500, TMT = F34)
 4. NCR auto-calculated items show "-"
+5. Nett Margin Billet row has computed values for both markets
+6. Margin TMT row has computed values for both markets
+7. Margin cells have green tint (positive) or red tint (negative)
 
 ## Step 4: Sanity Checks
 
@@ -97,12 +100,20 @@ NCR Tab:
 
 Change Log:
   [PASS/FAIL] Date column exists
-  [PASS/FAIL] Values match
+  [PASS/FAIL] Input values match
+  [PASS/FAIL] Nett Margin Billet:   Raipur=<value>, NCR=<value>
+  [PASS/FAIL] Margin TMT:           Raipur=<value>, NCR=<value>
+
+Formatting:
+  [PASS/FAIL] Colour-coded sections applied
+  [PASS/FAIL] Frozen panes set
+  [PASS/FAIL] Number formats (#,##0)
 
 Sanity Checks:
   [PASS/FAIL] No negative values
   [PASS/FAIL] TMT > Billet
   [PASS/FAIL] Silico Mn in kg range
+  [PASS/FAIL] Margins are reasonable
 
 Overall: PASS / FAIL (<N> issues)
 ```
