@@ -59,9 +59,15 @@ Each daily update uses the **most recent output** as the base Excel file:
 2. Use the `.xlsx` from the latest folder
 3. If no output exists, fall back to the template in `data/`
 
+## Margins (auto-computed for change log)
+The tool computes Nett Margin Billet and Margin TMT for both markets by replicating the Excel formula chain:
+- **Nett Margin Billet** = Market price Billet - Billet Cost (SUM of raw materials + operating costs)
+- **Margin TMT** = Market price TMT - Total Cost (Billet Cost + Rolling Mill Cost + Interest/Depreciation)
+These are logged in the change log alongside the input prices.
+
 ## Output Convention
 - Updated Excel: `output/YYYY-MM-DD/<filename>.xlsx`
-- Change log: `output/change_log.xlsx` (cumulative, appends new date columns)
+- Change log: `output/change_log.xlsx` (cumulative, appends new date columns with margins)
 
 ## Tool Command
 ```bash
