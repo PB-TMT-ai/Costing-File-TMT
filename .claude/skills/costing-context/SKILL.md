@@ -12,6 +12,8 @@ user-invocable: false
 2. **Clean xlsx** — External links, comments, and VML drawings are stripped from the output to prevent "found a problem with content" errors in Excel.
 3. **All work on main** — No feature branches. Output auto-pushes to `main` after every run.
 4. **File chaining** — Always use the most recent output as base, not the original template.
+5. **PDF naming varies** — BigMint PDFs may use standard naming (`BigMint_Daily_Report_as_on_...`) or timestamp-prefixed format (`1737343182595_iffsptpf8_BigMint_...`). Both are valid.
+6. **Old PDF section names** — Pre-2026 PDFs use "Ex-Raipur"/"Ex-Mandi" instead of "DAP-Raipur"/"DAP-Mandi" in Melting Scrap. The extraction tool handles both.
 
 ## Data Point Mapping (11 points)
 
@@ -76,7 +78,9 @@ Computed for both Raipur and NCR, logged alongside input prices.
 - Change log: `output/change_log.xlsx` (cumulative, appends new date columns with margins)
 - Auto-pushed to `main` after every run
 
-## Tool Command
+## Tools
+
+### Single-date update
 ```bash
 python tools/update_costing_file.py <base_excel> \
   --pallet-dri <value> --pig-iron <value> --scrap-raipur <value> \
@@ -84,3 +88,9 @@ python tools/update_costing_file.py <base_excel> \
   --report-date YYYY-MM-DD --billet-raipur <value> --tmt-raipur <value> \
   --scrap-mandi <raw_value> --billet-mandi <raw_value> --tmt-ncr <value>
 ```
+
+### Batch extraction (all PDFs)
+```bash
+python tools/extract_all_pdfs.py
+```
+Auto-discovers all `*BigMint*.pdf` files in `data/` and root directory, extracts 11 data points from each, and outputs JSON. Handles both old and new PDF naming conventions.

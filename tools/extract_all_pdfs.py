@@ -2,6 +2,7 @@
 """Extract prices from all BigMint PDFs for batch processing."""
 
 import json
+import os
 import re
 import sys
 
@@ -407,19 +408,50 @@ def extract_from_pdf(pdf_path):
     }
 
 
+def discover_pdfs(dirs=None):
+    """Auto-discover BigMint PDF files in given directories."""
+    import glob as globmod
+
+    if dirs is None:
+        dirs = [".", "data"]
+
+    seen = set()
+    pdfs = []
+    for d in dirs:
+        for pattern in [f"{d}/*BigMint*.pdf", f"{d}/*bigmint*.pdf"]:
+            for path in globmod.glob(pattern):
+                real = os.path.realpath(path)
+                if real not in seen:
+                    seen.add(real)
+                    pdfs.append(path)
+
+    # Sort by extracted date (extract date from each PDF cover page)
+    dated = []
+    for pdf in pdfs:
+        try:
+            doc = fitz.open(pdf)
+            date = extract_date(doc)
+            doc.close()
+            dated.append((date or "9999-99-99", pdf))
+        except Exception:
+            dated.append(("9999-99-99", pdf))
+
+    dated.sort(key=lambda x: x[0])
+    return [pdf for _, pdf in dated]
+
+
 if __name__ == "__main__":
-    pdfs = [
-        "BigMint_Daily_Report_as_on_31_Oct_2025_1761888015199_359.pdf",
-        "BigMint_Daily_Report_as_on_29_Nov_2025_1764392036835_558.pdf",
-        "BigMint_Daily_Report_as_on_20_Dec_2025_1766206695495_135.pdf",
-        "BigMint_Daily_Report_as_on_15_Jan_2026_1768444629402_396.pdf",
-        "BigMint_Daily_Report_as_on_30_Jan_2026_1769750135777_127.pdf",
-        "BigMint_Daily_Report_as_on_13_Feb_2026_1770953142120_643.pdf",
-        "BigMint_Daily_Report_as_on_27_Feb_2026_1772168610808_71.pdf",
-        "BigMint_Daily_Report_as_on_17_Mar_2026_1773722780192_230.pdf",
-        "data/BigMint_Daily_Report_as_on_23_Mar_2026_1774243648079_567.pdf",
-        "data/BigMint_Daily_Report_as_on_26_Mar_2026_1774502910818_548.pdf",
-    ]
+    import argparse as ap
+
+    parser = ap.ArgumentParser(description="Extract prices from all BigMint PDFs")
+    parser.add_argument(
+        "--dirs", nargs="*", default=None,
+        help="Directories to search for PDFs (default: current dir + data/)",
+    )
+    args = parser.parse_args()
+
+    pdfs = discover_pdfs(args.dirs)
+    print(f"Discovered {len(pdfs)} PDFs", file=sys.stderr)
 
     results = []
     for pdf in pdfs:

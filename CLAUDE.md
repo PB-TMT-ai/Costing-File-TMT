@@ -16,8 +16,11 @@ This project uses the WAT framework (Workflows, Agents, Tools).
 
 - `workflows/` — Markdown SOPs defining objectives, inputs, tools, outputs, edge cases
 - `tools/` — Python scripts for execution (API calls, transformations, file ops)
+  - `update_costing_file.py` — Main update tool: sets prices, computes margins, saves output, updates change log
+  - `extract_all_pdfs.py` — Batch extraction: auto-discovers BigMint PDFs, extracts all 11 data points, outputs JSON
+  - `format_output.py` — Professional Excel formatting (auto-called by update tool)
 - `.claude/skills/` — Claude Code skills (slash commands for common tasks)
-- `data/` — Input costing files, templates, and BigMint PDFs
+- `data/` — Input costing files, templates, and BigMint PDFs (may also exist in root directory)
 - `output/` — Date-wise folders (`output/YYYY-MM-DD/YYYYMMDD_Costing TMT.xlsx`) and cumulative `change_log.xlsx`
 
 ## Daily Costing Update (Primary Workflow)
@@ -38,6 +41,16 @@ Use `/update-costing` or follow `workflows/update_costing_from_pdf.md`.
 **Auto-push**: Output files are auto-committed and pushed to `main` after every run. No manual merge needed.
 
 **Output naming**: `YYYYMMDD_Costing TMT.xlsx` — only Raipur and NCR tabs are kept.
+
+## Batch Processing (Historical PDFs)
+
+For processing multiple PDFs at once, use `tools/extract_all_pdfs.py` to auto-discover and extract prices from all BigMint PDFs, then run `tools/update_costing_file.py` for each date in chronological order.
+
+**PDF locations**: BigMint PDFs may live in `data/` or the root directory, with varying naming conventions (e.g., `BigMint_Daily_Report_as_on_...` or `1737343182595_iffsptpf8_BigMint_...`).
+
+**Change log rebuild**: When processing historical PDFs, delete `output/change_log.xlsx` first and reprocess all dates in chronological order to ensure columns are in date order.
+
+**Skip push during batch**: Set `SKIP_PUSH=1` environment variable to skip the auto-push retry loop during batch runs (saves ~30s per invocation).
 
 ## When Things Fail
 
