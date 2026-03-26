@@ -102,6 +102,10 @@ After the tool runs, read the output Excel file and confirm:
 - NCR D9 formula is `=<scrap_mandi>-500`
 - NCR H16 formula is `=<billet_mandi>-500`
 - NCR F34 has the TMT value
-- Change log at `output/change_log.xlsx` has the new date column
+- Change log at `output/change_log.xlsx` has the new date column with:
+  - All 8 input prices (Raipur + NCR)
+  - Nett Margin Billet (computed for both markets)
+  - Margin TMT (computed for both markets)
+- Professional formatting applied (colour-coded sections, frozen panes, number formats)
 
-Print a verification summary.
+Print a verification summary including the computed margins.

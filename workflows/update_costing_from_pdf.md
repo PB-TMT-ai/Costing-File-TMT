@@ -1,11 +1,17 @@
 # Workflow: Update Costing File from BigMint Daily Report
 
 ## Objective
-Extract steel market prices from the BigMint Daily Report PDF and update the blue-highlighted cells in the costing Excel file for both Raipur and NCR markets.
+Extract steel market prices from the BigMint Daily Report PDF and update the costing Excel file for both Raipur and NCR markets. Auto-computes margins and applies professional formatting.
 
 ## Required Inputs
 - **PDF**: BigMint Daily Steel Report (e.g., `data/BigMint_Daily_Report_as_on_<date>.pdf`)
-- **Excel**: Costing file v3 (e.g., `data/<date>_BILLET AND TMT COSTING DETAILS_v3.xlsx`)
+- **Base Excel**: Most recent output from `output/YYYY-MM-DD/`, or template from `data/` if no previous output exists
+
+## File Chaining Rule
+Each daily update chains from the previous day's output:
+1. Check `output/` for date folders (sorted descending by name)
+2. Use the `.xlsx` from the latest folder as the base
+3. If no output folders exist, fall back to the `.xlsx` template in `data/`
 
 ## Data Points to Extract
 
@@ -30,13 +36,18 @@ Extract steel market prices from the BigMint Daily Report PDF and update the blu
 | 2 | H16 | Market price Billet | Ingot/Billet > Billet > North India > Mandi Gobindgarh | Formula: `=<value>-500` |
 | 3 | F34 | Market price TMT | Rebar (India) > Ex-Delhi/NCR > 12-25mm IF route > Fe 500 IS 1786 | Direct value |
 
+### Auto-Computed (logged in change log, not manually entered)
+- **Nett Margin Billet** = Market price Billet − Billet Cost (for both Raipur and NCR)
+- **Margin TMT** = Market price TMT − Total Cost (for both Raipur and NCR)
+
 ## Steps
 
-1. **Open PDF** and locate each section listed above
-2. **Extract prices** — note the Price column value for each data point
-3. **Run the update tool**:
+1. **Find base Excel** — use the most recent output (see File Chaining Rule above)
+2. **Open PDF** and locate each section listed above
+3. **Extract prices** — note the Price column value for each data point
+4. **Run the update tool**:
    ```bash
-   python tools/update_costing_file.py "data/<excel_file>.xlsx" \
+   python tools/update_costing_file.py "<base_excel_path>" \
      --pallet-dri <value> \
      --pig-iron <value> \
      --scrap-raipur <value> \
@@ -49,24 +60,46 @@ Extract steel market prices from the BigMint Daily Report PDF and update the blu
      --billet-mandi <value_before_adj> \
      --tmt-ncr <value>
    ```
-4. **Verify output** — open `output/YYYY-MM-DD/<file>.xlsx` and check values
-5. **Check change log** — open `output/change_log.xlsx` and verify the new date column was appended with correct Raipur and NCR values
+   The tool will automatically:
+   - Save to `output/YYYY-MM-DD/` folder
+   - Compute Nett Margin Billet and Margin TMT for both markets
+   - Append to `output/change_log.xlsx` (prices + margins)
+   - Apply professional formatting (colour-coded sections, number formats, frozen panes)
+5. **Verify output** — open `output/YYYY-MM-DD/<file>.xlsx` and check values
+6. **Check change log** — open `output/change_log.xlsx` and verify the new date column has correct prices and margins
+
+**Or simply run** `/update-costing` to automate steps 1–6 end-to-end.
 
 ## Output Structure
 ```
 output/
-├── change_log.xlsx              # Cumulative price history (all dates)
+├── change_log.xlsx              # Cumulative history: prices + margins (Raipur & NCR)
 ├── 2026-03-26/                  # Date-wise folder
-│   └── <costing_file>.xlsx      # Updated costing file for this date
+│   └── <costing_file>.xlsx      # Updated + formatted costing file
 ├── 2026-03-27/
 │   └── <costing_file>.xlsx
 └── ...
 ```
 
+## Change Log Columns (per date)
+| Row | Raipur | NCR |
+|-----|--------|-----|
+| Pallet DRI | value | - (auto-calc) |
+| Pig Iron | value | - (auto-calc) |
+| Scrap | value | value (after -500) |
+| Silico Manganese | value (kg) | - (auto-calc) |
+| Iron Ore DRI | value | - (auto-calc) |
+| Date | report date | report date |
+| Market price Billet | value | value (after -500) |
+| **Nett Margin Billet** | computed | computed |
+| Market price TMT | value | value |
+| **Margin TMT** | computed | computed |
+
 ## Tools Used
 | Tool | Purpose |
 |------|---------|
-| `tools/update_costing_file.py` | Updates Excel cells, saves to date folder, appends to change log |
+| `tools/update_costing_file.py` | Updates cells, computes margins, saves to date folder, appends change log, applies formatting |
+| `tools/format_output.py` | Professional formatting (auto-called by update tool, also usable standalone) |
 
 ## Edge Cases
 - **Silico Manganese**: PDF reports in INR/ton — must divide by 1000 for the kg value in Excel
@@ -74,9 +107,11 @@ output/
 - **NCR other inputs**: DRI, Pig Iron, Silico Mn are auto-calculated from Raipur via cross-sheet formulas — do NOT update those cells directly
 - **Date format**: Must be passed as YYYY-MM-DD string to the tool
 - **PDF table structure**: Prices are in the "Price" column. Ignore "Change", "W-O-W", "1M", "3M" columns
-- **Same-date re-run**: If the tool is run again for the same date, the change log columns are overwritten (supports corrections without duplication)
+- **Same-date re-run**: Change log columns are overwritten (supports corrections without duplication)
+- **File chaining**: Always use the latest output as base, not the original template
 
 ## Lessons Learned
 - The BigMint PDF has a consistent structure across daily reports — page numbers may shift but section headers remain stable
 - Sponge (India) table has two sub-columns: Sponge Iron (C-DRI) and Pellet Sponge (P-DRI) — read carefully
 - Melting Scrap section (DAP-Raipur, DAP-Mandi) is separate from Re-Rolling Scrap (Ex-Alang) — use the correct section
+- Margins are auto-computed by replicating the Excel formula chain in Python — they stay in sync with workbook constants

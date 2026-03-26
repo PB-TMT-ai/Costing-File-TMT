@@ -14,8 +14,20 @@ This project uses the WAT framework (Workflows, Agents, Tools).
 
 - `workflows/` — Markdown SOPs defining objectives, inputs, tools, outputs, edge cases
 - `tools/` — Python scripts for execution (API calls, transformations, file ops)
-- `data/` — Input costing files and templates
-- `output/` — Generated reports and processed files
+- `.claude/skills/` — Claude Code skills (slash commands for common tasks)
+- `data/` — Input costing files, templates, and BigMint PDFs
+- `output/` — Date-wise folders (`output/YYYY-MM-DD/`) and cumulative `change_log.xlsx`
+
+## Daily Costing Update (Primary Workflow)
+
+The main task is updating the costing Excel with fresh prices from a BigMint Daily Report PDF.
+Use `/update-costing` or follow `workflows/update_costing_from_pdf.md`.
+
+**File chaining**: Each day's update uses the most recent output Excel as the base (not a fresh upload). Falls back to `data/` template only if no previous output exists.
+
+**Margins**: The tool auto-computes Nett Margin (Billet) and Margin (TMT) for both Raipur and NCR, logged in the change log.
+
+**Formatting**: Professional Excel formatting is auto-applied (colour-coded sections, number formats, frozen panes).
 
 ## When Things Fail
 
