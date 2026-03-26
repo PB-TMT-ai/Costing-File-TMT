@@ -47,8 +47,8 @@ Use pymupdf (`import fitz`) to extract text from the PDF. Search for these exact
 
 | # | Item | PDF Section Path | How to Find | Adjustment |
 |---|------|-----------------|-------------|------------|
-| 1 | Scrap | Melting Scrap (India) > DAP-Mandi > HMS(80:20) | Find "DAP-Mandi" then "HMS(80:20)" in the Melting Scrap section. | Pass raw PDF value to tool (tool applies -500 formula) |
-| 2 | Market price Billet | Ingot/Billet > Billet > North India > Mandi Gobindgarh | In the Ingot/Billet table, find "North India / Mandi Gobindgarh" row. Take the BILLET price. | Pass raw PDF value to tool (tool applies -500 formula) |
+| 1 | Scrap | Melting Scrap (India) > DAP-Mandi > HMS(80:20) | Find "DAP-Mandi" then "HMS(80:20)" in the Melting Scrap section. | Pass raw PDF value to tool (tool subtracts 500 and writes computed value) |
+| 2 | Market price Billet | Ingot/Billet > Billet > North India > Mandi Gobindgarh | In the Ingot/Billet table, find "North India / Mandi Gobindgarh" row. Take the BILLET price. | Pass raw PDF value to tool (tool subtracts 500 and writes computed value) |
 | 3 | Market price TMT | Rebar (India) > Ex-Delhi/NCR > 12-25mm IF Route > Fe 500 IS 1786 | Find "Ex-Delhi/NCR" with "12-25mm, IF Route, Fe 500, IS 1786". Take the basic Price. | Direct value, no adjustment |
 
 ## Step 4: Show Values for Confirmation
@@ -97,15 +97,17 @@ python tools/update_costing_file.py "<base_excel_path>" \
 
 ## Step 6: Verify Output
 
-After the tool runs, read the output Excel file and confirm:
-- All 8 Raipur cells have the new values
-- NCR D9 formula is `=<scrap_mandi>-500`
-- NCR H16 formula is `=<billet_mandi>-500`
-- NCR F34 has the TMT value
-- Change log at `output/change_log.xlsx` has the new date column with:
-  - All 8 input prices (Raipur + NCR)
-  - Nett Margin Billet (computed for both markets)
-  - Margin TMT (computed for both markets)
-- Professional formatting applied (colour-coded sections, frozen panes, number formats)
+The tool automatically:
+- Computes all values in Python (zero Excel formulas)
+- Verifies no formulas leaked (safety check — fails if any found)
+- Saves formatted output to `output/YYYY-MM-DD/YYYYMMDD_Costing TMT.xlsx`
+- Removes extra tabs (keeps only Raipur and NCR)
+- Computes margins and updates `output/change_log.xlsx`
+- Auto-commits and pushes to `main` on GitHub
 
-Print a verification summary including the computed margins.
+After the tool runs, confirm the output shows:
+- "Verified: 0 formulas in output"
+- "Pushed to main successfully"
+- Correct margin values for both Raipur and NCR
+
+Print a summary of the computed margins and confirm the push succeeded.

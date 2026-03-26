@@ -51,7 +51,7 @@ Costing-File-TMT/
 
 | Tool | Description |
 |------|-------------|
-| `tools/update_costing_file.py` | Update Excel cells, compute margins, save to date folder, append change log |
+| `tools/update_costing_file.py` | Compute all values, verify zero formulas, save to date folder, append change log, auto-push to main |
 | `tools/format_output.py` | Apply professional formatting to costing sheets and change log |
 | `tools/validate_data.py` | Validate file structure and data integrity |
 | `tools/parse_costing_file.py` | Parse and normalize costing file data |
@@ -61,6 +61,13 @@ Costing-File-TMT/
 
 | Command | Description |
 |---------|-------------|
-| `/update-costing` | End-to-end: extract PDF prices, update Excel, verify output |
-| `/verify-costing [date]` | Verify output file values, formulas, and change log |
+| `/update-costing` | End-to-end: extract PDF prices, update Excel, verify, auto-push to main |
+| `/verify-costing [date]` | Verify output file values, zero formulas, and change log |
 | `/extract-prices [pdf]` | Read-only price extraction from BigMint PDF |
+
+## Key Design Decisions
+
+- **Zero formulas in output** — All cells are pre-computed numbers. Prevents errors in Excel Online / GitHub preview.
+- **Auto-push to main** — Output files commit and push automatically after each run. No manual merge needed.
+- **Safety check** — Tool scans output after save and fails if any formula strings remain.
+- **File chaining** — Each day's update builds on the previous output, not the original template.

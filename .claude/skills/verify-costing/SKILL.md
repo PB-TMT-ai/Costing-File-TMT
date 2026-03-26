@@ -17,9 +17,16 @@ You are verifying that an updated costing file and change log are correct.
 
 ## Step 2: Read the Output Excel
 
-Open `output/<date>/*.xlsx` using openpyxl and read these cells:
+Open `output/<date>/YYYYMMDD_Costing TMT.xlsx` using openpyxl and check:
 
-### Raipur Tab
+### Sheets
+- Only 2 sheets should exist: `Raipur` and `NCR`
+- No extra tabs (Sheet1, DGP, etc.)
+
+### Zero Formulas Check (CRITICAL)
+Scan every cell in both sheets. If ANY cell value is a string starting with `=`, this is a **FAIL**. All cells must be pre-computed numbers or text labels.
+
+### Raipur Tab — Values
 | Cell | Item | Expected Type |
 |------|------|--------------|
 | E7 | Pallet DRI | Number > 0 |
@@ -28,51 +35,46 @@ Open `output/<date>/*.xlsx` using openpyxl and read these cells:
 | E10 | Silico Manganese | Number > 0, typically 50-150 (INR/kg) |
 | E11 | Iron Ore DRI | Number > 0 |
 | C15 | Date | Date value matching the folder date |
+| I15 | Billet Cost | Number > 0 (computed, not formula) |
 | I16 | Market price Billet | Number > 0 |
+| I17 | Nett Margin | Number (can be negative) — must equal I16 - I15 |
+| F33 | Total Cost | Number > 0 (computed) |
 | F34 | Market price TMT | Number > 0 |
+| F35 | TMT Margin | Number (can be negative) — must equal F34 - F33 |
 
-Also check that formulas are preserved:
-- F7 should be `=E7*C7/100`
-- F8 should be `=E8*C8/100`
-- F9 should be `=E9*C9/100`
-- I15 should be `=SUM(I7:I14)`
-- I17 should be `=I16-I15`
-- F33 should be `=F28+I15+F32`
-- F35 should be `=F34-F33`
-
-### NCR Tab
-| Cell | Item | Expected Pattern |
-|------|------|-----------------|
-| D9 | Scrap | Formula `=<number>-500` |
-| H16 | Market price Billet | Formula `=<number>-500` |
+### NCR Tab — Values
+| Cell | Item | Expected Type |
+|------|------|--------------|
+| D7 | Pallet DRI rate | Number = Raipur E7 + 3100 (computed, not formula) |
+| D8 | Pig Iron rate | Number = Raipur E8 + 3100 (computed) |
+| D9 | Scrap rate | Number (PDF value minus 500, computed) |
+| D10 | Silico Mn rate | Number = Raipur E10 (computed) |
+| D11 | Iron Ore DRI rate | Number = Raipur E11 + 3100 (computed) |
+| H15 | Billet Cost | Number > 0 (computed) |
+| H16 | Market price Billet | Number (PDF value minus 500, computed) |
+| H17 | Nett Margin | Number — must equal H16 - H15 |
+| F33 | Total Cost | Number > 0 (computed) |
 | F34 | Market price TMT | Number > 0 |
-
-Also check cross-sheet formulas are intact:
-- D7 should be `=Raipur!E7+3100`
-- D8 should be `=Raipur!E8+3100`
-- D10 should be `=Raipur!E10`
-- D11 should be `=Raipur!E11+3100`
+| F35 | TMT Margin | Number — must equal F34 - F33 |
 
 ## Step 3: Cross-verify with Change Log
 
 Open `output/change_log.xlsx` and check:
 1. A column pair exists for the target date
 2. Raipur values match the Excel cells
-3. NCR values match (Scrap = D9 raw - 500, Billet = H16 raw - 500, TMT = F34)
+3. NCR values match (Scrap and Billet are after -500 adjustment, TMT = F34)
 4. NCR auto-calculated items show "-"
-5. Nett Margin Billet row has computed values for both markets
-6. Margin TMT row has computed values for both markets
-7. Margin cells have green tint (positive) or red tint (negative)
+5. Nett Margin Billet row has numeric values for both markets
+6. Margin TMT row has numeric values for both markets
 
 ## Step 4: Sanity Checks
 
-Run these validation rules:
-- No cell value is negative
-- No cell value is zero (except where 0 is valid, like Iron Ore DRI consumption in NCR)
+- No input cell value is zero (except where 0 is valid, like Iron Ore DRI consumption in NCR)
 - Silico Manganese is in kg range (< 200), not ton range (> 10000)
 - Market price TMT > Market price Billet (TMT is a finished product, always higher)
 - Date in C15 matches the folder date
-- NCR formulas contain "-500" adjustment
+- NCR D7 = Raipur E7 + 3100 (verify the computed value)
+- Margin values are plausible (typically -2000 to +5000 range)
 
 ## Step 5: Report
 
@@ -81,6 +83,11 @@ Print a verification report:
 ```
 === Costing File Verification: <DATE> ===
 
+File: output/<date>/YYYYMMDD_Costing TMT.xlsx
+Sheets: [PASS/FAIL] Raipur, NCR only
+
+Formulas: [PASS/FAIL] 0 formulas found (all values computed)
+
 Raipur Tab:
   [PASS/FAIL] E7  Pallet DRI:        <value>
   [PASS/FAIL] E8  Pig Iron:          <value>
@@ -88,15 +95,21 @@ Raipur Tab:
   [PASS/FAIL] E10 Silico Manganese:  <value>
   [PASS/FAIL] E11 Iron Ore DRI:      <value>
   [PASS/FAIL] C15 Date:              <value>
+  [PASS/FAIL] I15 Billet Cost:       <value> (computed)
   [PASS/FAIL] I16 Market Billet:     <value>
+  [PASS/FAIL] I17 Nett Margin:       <value>
+  [PASS/FAIL] F33 Total Cost:        <value> (computed)
   [PASS/FAIL] F34 Market TMT:        <value>
-  [PASS/FAIL] Formulas intact
+  [PASS/FAIL] F35 TMT Margin:        <value>
 
 NCR Tab:
-  [PASS/FAIL] D9  Scrap:             <formula> = <effective>
-  [PASS/FAIL] H16 Market Billet:     <formula> = <effective>
+  [PASS/FAIL] D9  Scrap:             <value> (after -500)
+  [PASS/FAIL] H15 Billet Cost:       <value> (computed)
+  [PASS/FAIL] H16 Market Billet:     <value> (after -500)
+  [PASS/FAIL] H17 Nett Margin:       <value>
   [PASS/FAIL] F34 Market TMT:        <value>
-  [PASS/FAIL] Cross-sheet formulas intact
+  [PASS/FAIL] F35 TMT Margin:        <value>
+  [PASS/FAIL] NCR rates derived correctly from Raipur
 
 Change Log:
   [PASS/FAIL] Date column exists
@@ -104,14 +117,8 @@ Change Log:
   [PASS/FAIL] Nett Margin Billet:   Raipur=<value>, NCR=<value>
   [PASS/FAIL] Margin TMT:           Raipur=<value>, NCR=<value>
 
-Formatting:
-  [PASS/FAIL] Colour-coded sections applied
-  [PASS/FAIL] Frozen panes set
-  [PASS/FAIL] Number formats (#,##0)
-
 Sanity Checks:
-  [PASS/FAIL] No negative values
-  [PASS/FAIL] TMT > Billet
+  [PASS/FAIL] TMT > Billet (both markets)
   [PASS/FAIL] Silico Mn in kg range
   [PASS/FAIL] Margins are reasonable
 

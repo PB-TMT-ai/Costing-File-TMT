@@ -32,8 +32,8 @@ Each daily update chains from the previous day's output:
 
 | # | Excel Cell | Item | PDF Section | Adjustment |
 |---|-----------|------|-------------|------------|
-| 1 | D9 | Scrap | Melting Scrap (India) > DAP-Mandi > HMS(80:20) | Formula: `=<value>-500` |
-| 2 | H16 | Market price Billet | Ingot/Billet > Billet > North India > Mandi Gobindgarh | Formula: `=<value>-500` |
+| 1 | D9 | Scrap | Melting Scrap (India) > DAP-Mandi > HMS(80:20) | Value minus 500 (computed) |
+| 2 | H16 | Market price Billet | Ingot/Billet > Billet > North India > Mandi Gobindgarh | Value minus 500 (computed) |
 | 3 | F34 | Market price TMT | Rebar (India) > Ex-Delhi/NCR > 12-25mm IF route > Fe 500 IS 1786 | Direct value |
 
 ### Auto-Computed (logged in change log, not manually entered)
@@ -61,23 +61,26 @@ Each daily update chains from the previous day's output:
      --tmt-ncr <value>
    ```
    The tool will automatically:
-   - Save to `output/YYYY-MM-DD/` folder
+   - Compute all values in Python (zero Excel formulas — prevents errors)
+   - Verify no formulas leaked into the output (safety check)
+   - Save to `output/YYYY-MM-DD/YYYYMMDD_Costing TMT.xlsx`
+   - Remove extra tabs (keeps only Raipur and NCR)
    - Compute Nett Margin Billet and Margin TMT for both markets
    - Append to `output/change_log.xlsx` (prices + margins)
    - Apply professional formatting (colour-coded sections, number formats, frozen panes)
-5. **Verify output** — open `output/YYYY-MM-DD/<file>.xlsx` and check values
-6. **Check change log** — open `output/change_log.xlsx` and verify the new date column has correct prices and margins
+   - Auto-commit and push to `main` on GitHub
+5. **Verify output** — the tool auto-verifies, but you can also run `/verify-costing`
 
 **Or simply run** `/update-costing` to automate steps 1–6 end-to-end.
 
 ## Output Structure
 ```
 output/
-├── change_log.xlsx              # Cumulative history: prices + margins (Raipur & NCR)
-├── 2026-03-26/                  # Date-wise folder
-│   └── <costing_file>.xlsx      # Updated + formatted costing file
-├── 2026-03-27/
-│   └── <costing_file>.xlsx
+├── change_log.xlsx                    # Cumulative history: prices + margins (Raipur & NCR)
+├── 2026-03-23/
+│   └── 20260323_Costing TMT.xlsx      # Formatted, 2 tabs only, zero formulas
+├── 2026-03-26/
+│   └── 20260326_Costing TMT.xlsx
 └── ...
 ```
 
@@ -103,8 +106,10 @@ output/
 
 ## Edge Cases
 - **Silico Manganese**: PDF reports in INR/ton — must divide by 1000 for the kg value in Excel
-- **NCR Scrap & Billet**: Always apply −500 adjustment via formula (not hardcoded)
-- **NCR other inputs**: DRI, Pig Iron, Silico Mn are auto-calculated from Raipur via cross-sheet formulas — do NOT update those cells directly
+- **NCR Scrap & Billet**: −500 adjustment is computed in Python and written as a plain number (no formulas)
+- **NCR other inputs**: DRI, Pig Iron, Silico Mn are computed from Raipur values (+3100 or same) and written directly — no cross-sheet formulas
+- **No Excel formulas**: All cells are pre-computed values. The tool verifies this after save and fails if any formula leaks through
+- **Auto-push**: Output files are auto-committed and pushed to `main` after every run
 - **Date format**: Must be passed as YYYY-MM-DD string to the tool
 - **PDF table structure**: Prices are in the "Price" column. Ignore "Change", "W-O-W", "1M", "3M" columns
 - **Same-date re-run**: Change log columns are overwritten (supports corrections without duplication)
@@ -115,3 +120,6 @@ output/
 - Sponge (India) table has two sub-columns: Sponge Iron (C-DRI) and Pellet Sponge (P-DRI) — read carefully
 - Melting Scrap section (DAP-Raipur, DAP-Mandi) is separate from Re-Rolling Scrap (Ex-Alang) — use the correct section
 - Margins are auto-computed by replicating the Excel formula chain in Python — they stay in sync with workbook constants
+- All output cells must be plain numbers, never formulas — openpyxl formulas have no cached values and cause errors in Excel Online/GitHub preview
+- Output files are auto-pushed to `main` — no manual merge needed
+- Output file naming: `YYYYMMDD_Costing TMT.xlsx` — only Raipur and NCR tabs are kept
