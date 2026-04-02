@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Generate a JSW One branded PowerPoint with absolute-value charts,
- * delta colour-box annotations, and dual-axis combo charts.
+ * delta annotations, and dual-axis combo charts.
  *
  * Data is filtered to one point per month (last date of each month).
  *
@@ -39,14 +39,9 @@ const COLORS = {
 
 const GRID = {
   L: 0.50, R: 12.83, W: 12.33,
-  TOP: 0.95, BOTTOM: 6.80, H: 5.85,
+  TOP: 0.95,
   FOOTER_Y: 7.05
 };
-
-// Chart area for positioning delta boxes (approximate pptxgenjs plot area)
-const CHART = { x: GRID.L, y: GRID.TOP, w: GRID.W, h: 4.60 };
-const PLOT_LEFT_PAD = 0.06;   // fraction of chart width for left axis space
-const PLOT_RIGHT_PAD = 0.02;
 
 // ═══════════════════════════════════════════════════════════════
 // GRAPH SPECIFICATIONS (4 chart slides)
@@ -133,7 +128,6 @@ function loadChangeLog(inputPath) {
     }
   }
 
-  // Parse all row data
   const allData = {};
   const seenRows = {};
   for (const spec of ROWS_TO_LOAD) {
@@ -170,11 +164,10 @@ function loadChangeLog(inputPath) {
 }
 
 function filterLastPerMonth(dates) {
-  // Group indices by YYYY-MM, keep only the last index per month
   const monthMap = new Map();
   for (let i = 0; i < dates.length; i++) {
-    const ym = dates[i].slice(0, 7); // "YYYY-MM"
-    monthMap.set(ym, i); // overwrites — keeps last
+    const ym = dates[i].slice(0, 7);
+    monthMap.set(ym, i);
   }
   return Array.from(monthMap.values()).sort((a, b) => a - b);
 }
@@ -210,6 +203,24 @@ function computeAbsolute(values, dates) {
   return { values: absValues, deltas, labels, avg };
 }
 
+/**
+ * Build category labels with delta annotations embedded.
+ * E.g. "Jan'25\n(+500)" for bars, so delta appears below the month label.
+ */
+function buildLabelsWithDeltas(dates, deltas, itemName) {
+  const labels = [];
+  for (let i = 0; i < dates.length; i++) {
+    const monthLabel = formatMonthLabel(dates[i]);
+    if (deltas[i] != null) {
+      const deltaStr = formatDelta(deltas[i], itemName);
+      labels.push(monthLabel + '\n(' + deltaStr + ')');
+    } else {
+      labels.push(monthLabel);
+    }
+  }
+  return labels;
+}
+
 function formatMonthLabel(dateStr) {
   try {
     const d = new Date(dateStr + 'T00:00:00');
@@ -222,7 +233,7 @@ function formatMonthLabel(dateStr) {
 }
 
 function formatNumber(val, item) {
-  if (item && item.includes('Silico Manganese')) return val.toFixed(1);
+  if (item && item.includes('Silico')) return val.toFixed(1);
   if (Math.abs(val) >= 1) return Math.round(val).toLocaleString('en-IN');
   return val.toFixed(2);
 }
@@ -275,86 +286,6 @@ function addFooter(slide, pageNum, sourceText) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// DELTA BOX HELPERS
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * Add coloured delta text boxes above/below bars.
- * For dual-market bars: each category has 2 bars (Raipur left, NCR right).
- * seriesDeltas: array of { deltas: [...], color: '...' }
- */
-function addDeltaBoxes(slide, seriesDeltas, numCategories, chartY, chartH, valMin, valMax, seriesValues) {
-  const numSeries = seriesDeltas.length;
-  const plotLeft = CHART.x + CHART.w * PLOT_LEFT_PAD;
-  const plotWidth = CHART.w * (1 - PLOT_LEFT_PAD - PLOT_RIGHT_PAD);
-  const catWidth = plotWidth / numCategories;
-  const barGroupWidth = catWidth * 0.7;
-  const barWidth = barGroupWidth / numSeries;
-  const boxH = 0.22;
-  const boxW = barWidth * 1.1;
-
-  for (let s = 0; s < numSeries; s++) {
-    const { deltas, color } = seriesDeltas[s];
-    const values = seriesValues[s];
-    for (let i = 0; i < numCategories; i++) {
-      if (deltas[i] == null) continue;
-      const deltaStr = formatDelta(deltas[i], '');
-      // Bar center X position
-      const catCenter = plotLeft + (i + 0.5) * catWidth;
-      const barCenterX = catCenter - barGroupWidth / 2 + (s + 0.5) * barWidth;
-      const boxX = barCenterX - boxW / 2;
-
-      // Y position: above bar for positive, below for negative
-      const barVal = values[i] || 0;
-      const valRange = valMax - valMin || 1;
-      const barTopFrac = 1 - (barVal - valMin) / valRange;
-      const barTopY = chartY + barTopFrac * chartH;
-
-      let boxY;
-      if (deltas[i] >= 0) {
-        boxY = barTopY - boxH - 0.02;
-      } else {
-        boxY = barTopY + 0.02;
-      }
-      // Clamp within slide
-      boxY = Math.max(CHART.y - 0.1, Math.min(boxY, CHART.y + CHART.h + 0.1));
-
-      slide.addShape('roundRect', {
-        x: boxX, y: boxY, w: boxW, h: boxH,
-        fill: { color: color }, rectRadius: 0.03,
-        line: { width: 0 }
-      });
-      slide.addText(deltaStr, {
-        x: boxX, y: boxY, w: boxW, h: boxH,
-        fontSize: 7, fontFace: FONT, color: WHITE,
-        bold: true, align: 'center', valign: 'middle', margin: 0
-      });
-    }
-  }
-}
-
-/**
- * Compute chart axis min/max from multiple value arrays.
- */
-function computeAxisRange(allValues) {
-  let min = Infinity, max = -Infinity;
-  for (const vals of allValues) {
-    for (const v of vals) {
-      if (v != null && v !== 0) {
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-    }
-  }
-  // Add 10% padding
-  const range = max - min || 1;
-  return { min: min - range * 0.1, max: max + range * 0.15 };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ANNOTATION HELPERS
-// ═══════════════════════════════════════════════════════════════
 function addAnnotationBox(slide, text, yPos, color) {
   slide.addShape('rect', {
     x: GRID.L, y: yPos, w: GRID.W, h: 0.30,
@@ -399,7 +330,7 @@ function addTitleSlide(pres, dates, pageNum) {
   return slide;
 }
 
-// --- Dual market bar chart (absolute values + delta boxes) ---
+// --- Dual market bar chart (absolute values, deltas in X-axis labels) ---
 function addDualMarketBarSlide(pres, spec, dates, data, pageNum) {
   const slide = pres.addSlide();
   slide.background = { color: WHITE };
@@ -418,21 +349,22 @@ function addDualMarketBarSlide(pres, spec, dates, data, pageNum) {
   const rResult = computeAbsolute(rValues, dates);
   const nResult = computeAbsolute(nValues, dates);
 
+  // Build labels with Raipur delta in parentheses
+  const labelsWithDelta = buildLabelsWithDeltas(dates, rResult.deltas, spec.item);
+
   const chartData = [
-    { name: 'Raipur', labels: rResult.labels, values: rResult.values },
-    { name: 'NCR',    labels: nResult.labels, values: nResult.values }
+    { name: 'Raipur', labels: labelsWithDelta, values: rResult.values },
+    { name: 'NCR',    labels: labelsWithDelta, values: nResult.values }
   ];
 
-  const axisRange = computeAxisRange([rResult.values, nResult.values]);
-
   slide.addChart(pres.charts.BAR, chartData, {
-    x: CHART.x, y: CHART.y, w: CHART.w, h: CHART.h,
+    x: GRID.L, y: GRID.TOP, w: GRID.W, h: 4.80,
     barDir: 'col',
     chartColors: [COLORS.RAIPUR, COLORS.NCR],
     chartArea: { fill: { color: WHITE } },
     catAxisHidden: false,
     catAxisLabelColor: GREY,
-    catAxisLabelFontSize: 10,
+    catAxisLabelFontSize: 8,
     catAxisLabelFontFace: FONT,
     catGridLine: { style: 'none' },
     valAxisHidden: false,
@@ -449,27 +381,21 @@ function addDualMarketBarSlide(pres, spec, dates, data, pageNum) {
     showTitle: false
   });
 
-  // Delta colour boxes
-  addDeltaBoxes(slide,
-    [
-      { deltas: rResult.deltas, color: COLORS.RAIPUR },
-      { deltas: nResult.deltas, color: COLORS.NCR },
-    ],
-    rResult.labels.length, CHART.y, CHART.h,
-    axisRange.min, axisRange.max,
-    [rResult.values, nResult.values]
-  );
-
   // Average annotation
+  const rDelta = rResult.deltas[rResult.deltas.length - 1];
+  const nDelta = nResult.deltas[nResult.deltas.length - 1];
+  const rDeltaStr = rDelta != null ? formatDelta(rDelta, spec.item) : 'N/A';
+  const nDeltaStr = nDelta != null ? formatDelta(nDelta, spec.item) : 'N/A';
   addAnnotationBox(slide,
-    `Period avg:  Raipur ${formatNumber(rResult.avg, spec.item)}  |  NCR ${formatNumber(nResult.avg, spec.item)} ${spec.unit}`,
-    5.65, BLUE);
+    `Latest:  Raipur ${rDeltaStr}  |  NCR ${nDeltaStr}     •     ` +
+    `Avg:  Raipur ${formatNumber(rResult.avg, spec.item)}  |  NCR ${formatNumber(nResult.avg, spec.item)} ${spec.unit}`,
+    5.85, BLUE);
 
   addFooter(slide, pageNum, 'Source: Costing change log');
   return slide;
 }
 
-// --- Combo chart: bars (primary axis) + line (secondary axis) ---
+// --- Combo chart: bars on primary axis + line on secondary axis ---
 function addComboChartSlide(pres, spec, dates, data, pageNum) {
   const slide = pres.addSlide();
   slide.background = { color: WHITE };
@@ -485,10 +411,9 @@ function addComboChartSlide(pres, spec, dates, data, pageNum) {
 
   const labels = dates.map(d => formatMonthLabel(d));
 
-  // Separate bar series (primary axis) and line series (secondary axis)
-  const barData = [];
+  const barSeriesData = [];
   const barColors = [];
-  const lineData = [];
+  const lineSeriesData = [];
   const lineColors = [];
   const deltaInfoParts = [];
 
@@ -498,10 +423,10 @@ function addComboChartSlide(pres, spec, dates, data, pageNum) {
     const seriesObj = { name: s.name, labels: labels, values: result.values };
 
     if (s.chartType === 'line') {
-      lineData.push(seriesObj);
+      lineSeriesData.push(seriesObj);
       lineColors.push(s.color);
     } else {
-      barData.push(seriesObj);
+      barSeriesData.push(seriesObj);
       barColors.push(s.color);
     }
 
@@ -511,13 +436,13 @@ function addComboChartSlide(pres, spec, dates, data, pageNum) {
     deltaInfoParts.push(`${s.name}: ${deltaStr} ${unit}`);
   }
 
-  // pptxgenjs combo chart: array of chart type objects
+  // Build combo chart with array-of-types syntax
   const chartTypes = [];
 
-  if (barData.length > 0) {
+  if (barSeriesData.length > 0) {
     chartTypes.push({
       type: pres.charts.BAR,
-      data: barData,
+      data: barSeriesData,
       options: {
         barDir: 'col',
         chartColors: barColors,
@@ -525,16 +450,15 @@ function addComboChartSlide(pres, spec, dates, data, pageNum) {
     });
   }
 
-  if (lineData.length > 0) {
+  if (lineSeriesData.length > 0) {
     chartTypes.push({
       type: pres.charts.LINE,
-      data: lineData,
+      data: lineSeriesData,
       options: {
         secondaryValAxis: true,
         secondaryCatAxis: false,
         chartColors: lineColors,
         lineSize: 2.5,
-        lineSmooth: false,
         showMarker: true,
         markerSize: 6,
       }
@@ -542,11 +466,11 @@ function addComboChartSlide(pres, spec, dates, data, pageNum) {
   }
 
   slide.addChart(chartTypes, {
-    x: CHART.x, y: CHART.y, w: CHART.w, h: CHART.h,
+    x: GRID.L, y: GRID.TOP, w: GRID.W, h: 4.80,
     chartArea: { fill: { color: WHITE } },
     catAxisHidden: false,
     catAxisLabelColor: GREY,
-    catAxisLabelFontSize: 10,
+    catAxisLabelFontSize: 9,
     catAxisLabelFontFace: FONT,
     catGridLine: { style: 'none' },
     valAxisHidden: false,
@@ -570,8 +494,8 @@ function addComboChartSlide(pres, spec, dates, data, pageNum) {
     showTitle: false,
   });
 
-  // Delta annotation box
-  addAnnotationBox(slide, `Latest change:  ${deltaInfoParts.join('  |  ')}`, 5.65, BLUE);
+  // Delta annotation
+  addAnnotationBox(slide, `Latest change:  ${deltaInfoParts.join('  |  ')}`, 5.85, BLUE);
 
   addFooter(slide, pageNum, 'Source: Costing change log');
   return slide;
