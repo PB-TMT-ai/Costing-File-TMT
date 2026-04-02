@@ -42,6 +42,8 @@ Use `/update-costing` or follow `workflows/update_costing_from_pdf.md`.
 
 **Output naming**: `YYYYMMDD_Costing TMT.xlsx` — only Raipur and NCR tabs are kept.
 
+**Material graphs**: After every costing update, regenerate `output/material_change_graphs.pptx` by running `node tools/create_material_change_graph.js`. This produces branded charts showing monthly absolute prices/margins with delta annotations. See `workflows/generate_material_graphs.md`.
+
 ## Batch Processing (Historical PDFs)
 
 For processing multiple PDFs at once, use `tools/extract_all_pdfs.py` to auto-discover and extract prices from all BigMint PDFs, then run `tools/update_costing_file.py` for each date in chronological order.

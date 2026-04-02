@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * Generate a JSW One branded PowerPoint with absolute-value charts
- * and delta annotations from the costing change log.
+ * Generate a JSW One branded PowerPoint with absolute-value charts,
+ * delta colour-box annotations, and dual-axis combo charts.
+ *
+ * Data is filtered to one point per month (last date of each month).
  *
  * Usage:
  *   node tools/create_material_change_graph.js [--input <path>] [--output <path>]
@@ -26,12 +28,11 @@ const WHITE  = 'FFFFFF';
 const BLACK  = '000000';
 const FONT   = 'Calibri';
 
-// Colors for combined raw materials chart
 const COLORS = {
-  PALLET_DRI:  '1565C0', // blue
-  PIG_IRON:    'D32F2F', // red
-  IRON_ORE:    '616161', // dark grey
-  SILICO_MN:   'FF8F00', // orange
+  PALLET_DRI:  '1565C0',
+  PIG_IRON:    'D32F2F',
+  IRON_ORE:    '616161',
+  SILICO_MN:   'FF8F00',
   RAIPUR:      BLUE,
   NCR:         GREY,
 };
@@ -41,6 +42,11 @@ const GRID = {
   TOP: 0.95, BOTTOM: 6.80, H: 5.85,
   FOOTER_Y: 7.05
 };
+
+// Chart area for positioning delta boxes (approximate pptxgenjs plot area)
+const CHART = { x: GRID.L, y: GRID.TOP, w: GRID.W, h: 4.60 };
+const PLOT_LEFT_PAD = 0.06;   // fraction of chart width for left axis space
+const PLOT_RIGHT_PAD = 0.02;
 
 // ═══════════════════════════════════════════════════════════════
 // GRAPH SPECIFICATIONS (4 chart slides)
@@ -54,13 +60,13 @@ const CHART_SLIDES = [
     unit: 'INR/MT',
   },
   {
-    type: 'combinedLine',
+    type: 'comboChart',
     title: 'Raw Materials — Raipur',
     series: [
-      { name: 'Pallet DRI',       row: 3, axis: 'primary',   color: COLORS.PALLET_DRI },
-      { name: 'Pig Iron',         row: 4, axis: 'primary',   color: COLORS.PIG_IRON },
-      { name: 'Iron Ore DRI',     row: 7, axis: 'primary',   color: COLORS.IRON_ORE },
-      { name: 'Silico Manganese', row: 6, axis: 'secondary', color: COLORS.SILICO_MN },
+      { name: 'Pallet DRI',       row: 3, axis: 'primary',   color: COLORS.PALLET_DRI, chartType: 'bar' },
+      { name: 'Pig Iron',         row: 4, axis: 'primary',   color: COLORS.PIG_IRON,   chartType: 'bar' },
+      { name: 'Iron Ore DRI',     row: 7, axis: 'primary',   color: COLORS.IRON_ORE,   chartType: 'bar' },
+      { name: 'Silico Manganese', row: 6, axis: 'secondary', color: COLORS.SILICO_MN,  chartType: 'line' },
     ],
     primaryUnit: 'INR/MT',
     secondaryUnit: 'INR/kg',
@@ -81,7 +87,6 @@ const CHART_SLIDES = [
   },
 ];
 
-// Rows to load from change log
 const ROWS_TO_LOAD = [
   { key: 'Scrap',              row: 5 },
   { key: 'Pallet DRI',        row: 3 },
@@ -108,7 +113,7 @@ for (const lp of logoPaths) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// DATA LOADING
+// DATA LOADING & MONTHLY FILTERING
 // ═══════════════════════════════════════════════════════════════
 function loadChangeLog(inputPath) {
   const wb = XLSX.readFile(inputPath);
@@ -118,22 +123,23 @@ function loadChangeLog(inputPath) {
   const range = XLSX.utils.decode_range(ws['!ref']);
   const maxCol = range.e.c;
 
-  const dates = [];
+  const allDates = [];
   const dateCols = [];
   for (let c = 1; c <= maxCol; c += 2) {
     const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
     if (cell && cell.v != null) {
-      dates.push(String(cell.v));
+      allDates.push(String(cell.v));
       dateCols.push(c);
     }
   }
 
-  const data = {};
+  // Parse all row data
+  const allData = {};
   const seenRows = {};
   for (const spec of ROWS_TO_LOAD) {
     const row = spec.row - 1;
     if (seenRows[row]) {
-      data[spec.key] = seenRows[row];
+      allData[spec.key] = seenRows[row];
       continue;
     }
     const raipur = [];
@@ -146,10 +152,31 @@ function loadChangeLog(inputPath) {
     }
     const rowData = { Raipur: raipur, NCR: ncr };
     seenRows[row] = rowData;
-    data[spec.key] = rowData;
+    allData[spec.key] = rowData;
+  }
+
+  // Filter to last date per month
+  const monthlyIndices = filterLastPerMonth(allDates);
+  const dates = monthlyIndices.map(i => allDates[i]);
+  const data = {};
+  for (const key of Object.keys(allData)) {
+    data[key] = {
+      Raipur: monthlyIndices.map(i => allData[key].Raipur[i]),
+      NCR:    monthlyIndices.map(i => allData[key].NCR[i]),
+    };
   }
 
   return { dates, data };
+}
+
+function filterLastPerMonth(dates) {
+  // Group indices by YYYY-MM, keep only the last index per month
+  const monthMap = new Map();
+  for (let i = 0; i < dates.length; i++) {
+    const ym = dates[i].slice(0, 7); // "YYYY-MM"
+    monthMap.set(ym, i); // overwrites — keeps last
+  }
+  return Array.from(monthMap.values()).sort((a, b) => a - b);
 }
 
 function parseValue(cell) {
@@ -169,7 +196,7 @@ function computeAbsolute(values, dates) {
   const labels = [];
   for (let i = 0; i < values.length; i++) {
     absValues.push(values[i] != null ? values[i] : 0);
-    labels.push(formatDateLabel(dates[i]));
+    labels.push(formatMonthLabel(dates[i]));
     if (i === 0) {
       deltas.push(null);
     } else if (values[i] != null && values[i - 1] != null) {
@@ -183,7 +210,7 @@ function computeAbsolute(values, dates) {
   return { values: absValues, deltas, labels, avg };
 }
 
-function formatDateLabel(dateStr) {
+function formatMonthLabel(dateStr) {
   try {
     const d = new Date(dateStr + 'T00:00:00');
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -249,6 +276,83 @@ function addFooter(slide, pageNum, sourceText) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// DELTA BOX HELPERS
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Add coloured delta text boxes above/below bars.
+ * For dual-market bars: each category has 2 bars (Raipur left, NCR right).
+ * seriesDeltas: array of { deltas: [...], color: '...' }
+ */
+function addDeltaBoxes(slide, seriesDeltas, numCategories, chartY, chartH, valMin, valMax, seriesValues) {
+  const numSeries = seriesDeltas.length;
+  const plotLeft = CHART.x + CHART.w * PLOT_LEFT_PAD;
+  const plotWidth = CHART.w * (1 - PLOT_LEFT_PAD - PLOT_RIGHT_PAD);
+  const catWidth = plotWidth / numCategories;
+  const barGroupWidth = catWidth * 0.7;
+  const barWidth = barGroupWidth / numSeries;
+  const boxH = 0.22;
+  const boxW = barWidth * 1.1;
+
+  for (let s = 0; s < numSeries; s++) {
+    const { deltas, color } = seriesDeltas[s];
+    const values = seriesValues[s];
+    for (let i = 0; i < numCategories; i++) {
+      if (deltas[i] == null) continue;
+      const deltaStr = formatDelta(deltas[i], '');
+      // Bar center X position
+      const catCenter = plotLeft + (i + 0.5) * catWidth;
+      const barCenterX = catCenter - barGroupWidth / 2 + (s + 0.5) * barWidth;
+      const boxX = barCenterX - boxW / 2;
+
+      // Y position: above bar for positive, below for negative
+      const barVal = values[i] || 0;
+      const valRange = valMax - valMin || 1;
+      const barTopFrac = 1 - (barVal - valMin) / valRange;
+      const barTopY = chartY + barTopFrac * chartH;
+
+      let boxY;
+      if (deltas[i] >= 0) {
+        boxY = barTopY - boxH - 0.02;
+      } else {
+        boxY = barTopY + 0.02;
+      }
+      // Clamp within slide
+      boxY = Math.max(CHART.y - 0.1, Math.min(boxY, CHART.y + CHART.h + 0.1));
+
+      slide.addShape('roundRect', {
+        x: boxX, y: boxY, w: boxW, h: boxH,
+        fill: { color: color }, rectRadius: 0.03,
+        line: { width: 0 }
+      });
+      slide.addText(deltaStr, {
+        x: boxX, y: boxY, w: boxW, h: boxH,
+        fontSize: 7, fontFace: FONT, color: WHITE,
+        bold: true, align: 'center', valign: 'middle', margin: 0
+      });
+    }
+  }
+}
+
+/**
+ * Compute chart axis min/max from multiple value arrays.
+ */
+function computeAxisRange(allValues) {
+  let min = Infinity, max = -Infinity;
+  for (const vals of allValues) {
+    for (const v of vals) {
+      if (v != null && v !== 0) {
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+    }
+  }
+  // Add 10% padding
+  const range = max - min || 1;
+  return { min: min - range * 0.1, max: max + range * 0.15 };
+}
+
+// ═══════════════════════════════════════════════════════════════
 // ANNOTATION HELPERS
 // ═══════════════════════════════════════════════════════════════
 function addAnnotationBox(slide, text, yPos, color) {
@@ -279,13 +383,13 @@ function addTitleSlide(pres, dates, pageNum) {
   addDivider(slide, 2.95);
   addLogo(slide, 'title');
 
-  slide.addText('Key raw material prices and margin trends with month-on-month changes', {
+  slide.addText('Monthly raw material prices and margin trends with period-on-period changes', {
     x: 0.64, y: 3.12, w: 9.40, h: 0.45,
     fontSize: 12, fontFace: FONT, color: GREY,
     align: 'left', valign: 'top', margin: 0
   });
 
-  slide.addText(`Period: ${dates[0]} to ${dates[dates.length - 1]}  |  ${dates.length} data points`, {
+  slide.addText(`Period: ${dates[0]} to ${dates[dates.length - 1]}  |  ${dates.length} months`, {
     x: 0.64, y: 3.52, w: 9.40, h: 0.35,
     fontSize: 12, fontFace: FONT, color: GREY,
     align: 'left', valign: 'top', margin: 0
@@ -295,7 +399,7 @@ function addTitleSlide(pres, dates, pageNum) {
   return slide;
 }
 
-// --- Dual market bar chart (absolute values) ---
+// --- Dual market bar chart (absolute values + delta boxes) ---
 function addDualMarketBarSlide(pres, spec, dates, data, pageNum) {
   const slide = pres.addSlide();
   slide.background = { color: WHITE };
@@ -319,14 +423,16 @@ function addDualMarketBarSlide(pres, spec, dates, data, pageNum) {
     { name: 'NCR',    labels: nResult.labels, values: nResult.values }
   ];
 
+  const axisRange = computeAxisRange([rResult.values, nResult.values]);
+
   slide.addChart(pres.charts.BAR, chartData, {
-    x: GRID.L, y: GRID.TOP, w: GRID.W, h: 4.60,
+    x: CHART.x, y: CHART.y, w: CHART.w, h: CHART.h,
     barDir: 'col',
     chartColors: [COLORS.RAIPUR, COLORS.NCR],
     chartArea: { fill: { color: WHITE } },
     catAxisHidden: false,
     catAxisLabelColor: GREY,
-    catAxisLabelFontSize: 9,
+    catAxisLabelFontSize: 10,
     catAxisLabelFontFace: FONT,
     catGridLine: { style: 'none' },
     valAxisHidden: false,
@@ -343,14 +449,19 @@ function addDualMarketBarSlide(pres, spec, dates, data, pageNum) {
     showTitle: false
   });
 
-  // Delta + average annotation boxes
-  const rLatestDelta = rResult.deltas[rResult.deltas.length - 1];
-  const nLatestDelta = nResult.deltas[nResult.deltas.length - 1];
-  const rDeltaStr = rLatestDelta != null ? formatDelta(rLatestDelta, spec.item) : 'N/A';
-  const nDeltaStr = nLatestDelta != null ? formatDelta(nLatestDelta, spec.item) : 'N/A';
+  // Delta colour boxes
+  addDeltaBoxes(slide,
+    [
+      { deltas: rResult.deltas, color: COLORS.RAIPUR },
+      { deltas: nResult.deltas, color: COLORS.NCR },
+    ],
+    rResult.labels.length, CHART.y, CHART.h,
+    axisRange.min, axisRange.max,
+    [rResult.values, nResult.values]
+  );
 
+  // Average annotation
   addAnnotationBox(slide,
-    `Latest change:  Raipur ${rDeltaStr}  |  NCR ${nDeltaStr}     •     ` +
     `Period avg:  Raipur ${formatNumber(rResult.avg, spec.item)}  |  NCR ${formatNumber(nResult.avg, spec.item)} ${spec.unit}`,
     5.65, BLUE);
 
@@ -358,8 +469,8 @@ function addDualMarketBarSlide(pres, spec, dates, data, pageNum) {
   return slide;
 }
 
-// --- Combined line chart (multi-series, dual Y-axis) ---
-function addCombinedLineSlide(pres, spec, dates, data, pageNum) {
+// --- Combo chart: bars (primary axis) + line (secondary axis) ---
+function addComboChartSlide(pres, spec, dates, data, pageNum) {
   const slide = pres.addSlide();
   slide.background = { color: WHITE };
 
@@ -372,20 +483,27 @@ function addCombinedLineSlide(pres, spec, dates, data, pageNum) {
   addDivider(slide, 0.75);
   addLogo(slide, 'content');
 
-  const labels = dates.map(d => formatDateLabel(d));
-  const chartData = [];
-  const chartColors = [];
+  const labels = dates.map(d => formatMonthLabel(d));
+
+  // Separate bar series (primary axis) and line series (secondary axis)
+  const barData = [];
+  const barColors = [];
+  const lineData = [];
+  const lineColors = [];
   const deltaInfoParts = [];
 
   for (const s of spec.series) {
     const values = data[s.name]['Raipur'];
     const result = computeAbsolute(values, dates);
-    chartData.push({
-      name: s.name,
-      labels: labels,
-      values: result.values,
-    });
-    chartColors.push(s.color);
+    const seriesObj = { name: s.name, labels: labels, values: result.values };
+
+    if (s.chartType === 'line') {
+      lineData.push(seriesObj);
+      lineColors.push(s.color);
+    } else {
+      barData.push(seriesObj);
+      barColors.push(s.color);
+    }
 
     const latestDelta = result.deltas[result.deltas.length - 1];
     const deltaStr = latestDelta != null ? formatDelta(latestDelta, s.name) : 'N/A';
@@ -393,17 +511,42 @@ function addCombinedLineSlide(pres, spec, dates, data, pageNum) {
     deltaInfoParts.push(`${s.name}: ${deltaStr} ${unit}`);
   }
 
-  // Mark secondary axis series
-  // pptxgenjs combo: use secondaryValAxis on the last series (Silico Mn)
-  const secondaryIdx = spec.series.findIndex(s => s.axis === 'secondary');
+  // pptxgenjs combo chart: array of chart type objects
+  const chartTypes = [];
 
-  slide.addChart(pres.charts.LINE, chartData, {
-    x: GRID.L, y: GRID.TOP, w: GRID.W, h: 4.60,
-    chartColors: chartColors,
+  if (barData.length > 0) {
+    chartTypes.push({
+      type: pres.charts.BAR,
+      data: barData,
+      options: {
+        barDir: 'col',
+        chartColors: barColors,
+      }
+    });
+  }
+
+  if (lineData.length > 0) {
+    chartTypes.push({
+      type: pres.charts.LINE,
+      data: lineData,
+      options: {
+        secondaryValAxis: true,
+        secondaryCatAxis: false,
+        chartColors: lineColors,
+        lineSize: 2.5,
+        lineSmooth: false,
+        showMarker: true,
+        markerSize: 6,
+      }
+    });
+  }
+
+  slide.addChart(chartTypes, {
+    x: CHART.x, y: CHART.y, w: CHART.w, h: CHART.h,
     chartArea: { fill: { color: WHITE } },
     catAxisHidden: false,
     catAxisLabelColor: GREY,
-    catAxisLabelFontSize: 9,
+    catAxisLabelFontSize: 10,
     catAxisLabelFontFace: FONT,
     catGridLine: { style: 'none' },
     valAxisHidden: false,
@@ -414,23 +557,17 @@ function addCombinedLineSlide(pres, spec, dates, data, pageNum) {
     valAxisTitleColor: GREY,
     valAxisTitleFontSize: 9,
     valGridLine: { style: 'dash', color: 'E0E0E0', size: 0.5 },
+    secondaryValAxis: true,
+    secondaryValAxisTitle: spec.secondaryUnit,
+    secondaryValAxisTitleColor: COLORS.SILICO_MN,
+    secondaryValAxisTitleFontSize: 9,
     showValue: false,
-    lineSize: 2,
-    lineSmooth: false,
-    showMarker: true,
-    markerSize: 5,
     showLegend: true,
     legendPos: 'b',
     legendFontSize: 10,
     legendFontFace: FONT,
     legendColor: GREY,
     showTitle: false,
-    // Secondary axis for Silico Manganese
-    secondaryValAxis: secondaryIdx >= 0,
-    secondaryValAxisTitle: secondaryIdx >= 0 ? spec.secondaryUnit : undefined,
-    secondaryValAxisTitleColor: GREY,
-    secondaryValAxisTitleFontSize: 9,
-    secondaryCatAxis: false,
   });
 
   // Delta annotation box
@@ -460,27 +597,23 @@ function main() {
 
   console.error(`Loading change log: ${inputPath}`);
   const { dates, data } = loadChangeLog(inputPath);
-  console.error(`Found ${dates.length} dates: ${dates[0]} to ${dates[dates.length - 1]}`);
+  console.error(`Filtered to ${dates.length} monthly data points: ${dates[0]} to ${dates[dates.length - 1]}`);
 
   const pres = new PptxGenJS();
   pres.layout = 'LAYOUT_WIDE';
 
   let pageNum = 1;
-
-  // Slide 1: Title
   addTitleSlide(pres, dates, pageNum++);
 
-  // Slides 2-5: Charts
   for (const spec of CHART_SLIDES) {
     console.error(`  Generating chart: ${spec.title || spec.item}...`);
-    if (spec.type === 'combinedLine') {
-      addCombinedLineSlide(pres, spec, dates, data, pageNum++);
+    if (spec.type === 'comboChart') {
+      addComboChartSlide(pres, spec, dates, data, pageNum++);
     } else {
       addDualMarketBarSlide(pres, spec, dates, data, pageNum++);
     }
   }
 
-  // Ensure output directory exists
   const outDir = path.dirname(outputPath);
   if (outDir && !fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
