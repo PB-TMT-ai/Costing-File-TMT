@@ -16,13 +16,15 @@ node tools/create_material_change_graph.js
 Input: `output/change_log.xlsx` (default)
 Output: `output/material_change_graphs.pptx` (overwrites existing)
 
+The script automatically runs `tools/clean_pptx.py` as a post-processor to fix pptxgenjs orphaned XML references. No manual step needed.
+
 ## Slide Structure (5 slides)
 
 | Slide | Title | Chart Type | Data |
 |-------|-------|-----------|------|
-| 1 | Title | — | Period info, data point count |
+| 1 | Title | — | Period info, monthly data point count |
 | 2 | Scrap (Raipur & NCR) | Grouped bar | Absolute scrap prices, dual market |
-| 3 | Raw Materials — Raipur | Combo (bars + line) | P-DRI, Pig Iron, Iron Ore DRI (bars, INR/MT left axis) + Silico Mn (line, INR/kg right axis) |
+| 3 | Raw Materials — Raipur | Multi-line | P-DRI, Pig Iron, Iron Ore DRI (INR/MT) + Silico Mn (scaled ×400, legend shows INR/kg) |
 | 4 | Nett Margin Billet (Raipur & NCR) | Grouped bar | Absolute billet margins, dual market |
 | 5 | Margin TMT (Raipur & NCR) | Grouped bar | Absolute TMT margins, dual market |
 
@@ -37,24 +39,24 @@ Output: `output/material_change_graphs.pptx` (overwrites existing)
 - All charts display **absolute prices/margins** (not month-on-month deltas)
 - The Y-axis shows the actual value (e.g., 34,000 INR/MT)
 
-### 3. Delta Colour Boxes
-- Month-on-month changes are shown as small **coloured text boxes** above (positive) or below (negative) each bar
-- Box colour matches the series colour:
-  - Raipur = JSW Blue (`#213366`)
-  - NCR = Grey (`#7F7F7F`)
-- Format: "+500" or "-200" in white text on coloured background
-- First data point has no delta box (no prior month to compare)
+### 3. Delta Annotations in X-Axis Labels
+- Month-on-month changes are shown **embedded in the X-axis category labels** below each bar group
+- Format: `Jan'25\nR:+500 | N:-200` (Raipur and NCR deltas on second line)
+- First data point has no delta (no prior month to compare)
+- This approach avoids overlay text boxes that can cause PowerPoint repair errors
 
-### 4. Combined Raw Materials Chart (Dual Y-Axis)
-- **Left Y-axis (INR/MT)**: Pallet DRI (blue bars), Pig Iron (red bars), Iron Ore DRI (grey bars)
-- **Right Y-axis (INR/kg)**: Silico Manganese (orange line with markers)
-- Uses pptxgenjs combo chart API with `secondaryValAxis: true`
-- Legend at bottom shows all 4 series
+### 4. Combined Raw Materials Chart (Single Axis, Silico Mn Scaled)
+- **All 4 materials as line charts** on a single Y-axis (INR/MT)
+- P-DRI (blue), Pig Iron (red), Iron Ore DRI (grey), Silico Manganese (orange)
+- **Silico Mn is scaled ×400** to align visually with INR/MT values (65 INR/kg × 400 = 26,000)
+- Legend shows "Silico Manganese (INR/kg)" — the scaling is transparent to the viewer
+- Line chart with markers for all 4 series; legend at bottom
+- Note: pptxgenjs combo chart (bars + line with dual Y-axis) has XML bugs causing PowerPoint repair errors, so all-lines with scaling is used instead
 
 ### 5. Margin Charts
 - Both Raipur and NCR shown together on the same chart (grouped bars)
 - Values are **absolute margins** (can be negative)
-- Delta boxes show period-on-period change in margin
+- X-axis labels include delta annotations for both markets
 
 ## Integration with Costing Updates
 
@@ -66,8 +68,14 @@ git commit -m "Update material change graphs"
 git push origin main
 ```
 
+## Post-Processing (Automatic)
+The script calls `tools/clean_pptx.py` after generation to:
+- Strip orphaned `[Content_Types].xml` entries (pptxgenjs registers slideMaster2-5 but doesn't create them)
+- This prevents the "found a problem with content" repair prompt in PowerPoint
+
 ## Dependencies
 - Node.js with `pptxgenjs` and `xlsx` packages (installed via `npm install`)
+- Python 3 (for `tools/clean_pptx.py` post-processor)
 - JSW logo at `.claude/skills/jsw-one-pptx/assets/JSW_Logo_Clean.png`
 
 ## Styling (JSW One Brand)
@@ -76,3 +84,9 @@ git push origin main
 - Layout: Widescreen 16:9
 - Blue/Red divider bar on each slide
 - Logo in top right corner
+
+## Lessons Learned
+- pptxgenjs combo chart API (BAR + LINE with secondaryValAxis) generates malformed XML with missing `<c:valAx>` definitions — avoid it
+- pptxgenjs registers orphaned Content_Types for non-existent slideMasters — must post-process with `clean_pptx.py`
+- Overlay text boxes (delta colour boxes positioned over chart area) cause PowerPoint repair errors — use X-axis labels instead
+- Silico Mn (65-81 INR/kg) is invisible when plotted alongside INR/MT values (22k-38k) — scale ×400 to align visually

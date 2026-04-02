@@ -19,6 +19,8 @@ This project uses the WAT framework (Workflows, Agents, Tools).
   - `update_costing_file.py` — Main update tool: sets prices, computes margins, saves output, updates change log
   - `extract_all_pdfs.py` — Batch extraction: auto-discovers BigMint PDFs, extracts all 11 data points, outputs JSON
   - `format_output.py` — Professional Excel formatting (auto-called by update tool)
+  - `clean_pptx.py` — Post-processor: strips orphaned Content_Types from PPTX (auto-called by graph script)
+  - `create_material_change_graph.js` — Generates branded PPT with monthly price/margin charts (Node.js)
 - `.claude/skills/` — Claude Code skills (slash commands for common tasks)
 - `data/` — Input costing files, templates, and BigMint PDFs (may also exist in root directory)
 - `output/` — Date-wise folders (`output/YYYY-MM-DD/YYYYMMDD_Costing TMT.xlsx`) and cumulative `change_log.xlsx`
