@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Generate a JSW One branded PowerPoint with month-on-month change bar charts
- * from the costing change log.
+ * Generate a JSW One branded PowerPoint with absolute-value charts
+ * and delta annotations from the costing change log.
  *
  * Usage:
  *   node tools/create_material_change_graph.js [--input <path>] [--output <path>]
@@ -26,6 +26,16 @@ const WHITE  = 'FFFFFF';
 const BLACK  = '000000';
 const FONT   = 'Calibri';
 
+// Colors for combined raw materials chart
+const COLORS = {
+  PALLET_DRI:  '1565C0', // blue
+  PIG_IRON:    'D32F2F', // red
+  IRON_ORE:    '616161', // dark grey
+  SILICO_MN:   'FF8F00', // orange
+  RAIPUR:      BLUE,
+  NCR:         GREY,
+};
+
 const GRID = {
   L: 0.50, R: 12.83, W: 12.33,
   TOP: 0.95, BOTTOM: 6.80, H: 5.85,
@@ -33,18 +43,53 @@ const GRID = {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// GRAPH SPECIFICATIONS
+// GRAPH SPECIFICATIONS (4 chart slides)
 // ═══════════════════════════════════════════════════════════════
-const GRAPH_SPECS = [
-  { item: 'Pallet DRI',                row: 3,  markets: ['Raipur'],        unit: 'INR/MT' },
-  { item: 'Pig Iron',                  row: 4,  markets: ['Raipur'],        unit: 'INR/MT' },
-  { item: 'Scrap',                     row: 5,  markets: ['Raipur', 'NCR'], unit: 'INR/MT' },
-  { item: 'Silico Manganese',          row: 6,  markets: ['Raipur'],        unit: 'INR/kg' },
-  { item: 'Iron Ore DRI',              row: 7,  markets: ['Raipur'],        unit: 'INR/MT' },
-  { item: 'Nett Margin Billet (Raipur)', row: 10, markets: ['Raipur'], marketKey: 'Raipur', unit: 'INR/MT' },
-  { item: 'Nett Margin Billet (NCR)',    row: 10, markets: ['NCR'],    marketKey: 'NCR',    unit: 'INR/MT' },
-  { item: 'Margin TMT (Raipur)',         row: 12, markets: ['Raipur'], marketKey: 'Raipur', unit: 'INR/MT' },
-  { item: 'Margin TMT (NCR)',            row: 12, markets: ['NCR'],    marketKey: 'NCR',    unit: 'INR/MT' },
+const CHART_SLIDES = [
+  {
+    type: 'dualMarketBar',
+    title: 'Scrap (Raipur & NCR)',
+    item: 'Scrap',
+    row: 5,
+    unit: 'INR/MT',
+  },
+  {
+    type: 'combinedLine',
+    title: 'Raw Materials — Raipur',
+    series: [
+      { name: 'Pallet DRI',       row: 3, axis: 'primary',   color: COLORS.PALLET_DRI },
+      { name: 'Pig Iron',         row: 4, axis: 'primary',   color: COLORS.PIG_IRON },
+      { name: 'Iron Ore DRI',     row: 7, axis: 'primary',   color: COLORS.IRON_ORE },
+      { name: 'Silico Manganese', row: 6, axis: 'secondary', color: COLORS.SILICO_MN },
+    ],
+    primaryUnit: 'INR/MT',
+    secondaryUnit: 'INR/kg',
+  },
+  {
+    type: 'dualMarketBar',
+    title: 'Nett Margin Billet (Raipur & NCR)',
+    item: 'Nett Margin Billet',
+    row: 10,
+    unit: 'INR/MT',
+  },
+  {
+    type: 'dualMarketBar',
+    title: 'Margin TMT (Raipur & NCR)',
+    item: 'Margin TMT',
+    row: 12,
+    unit: 'INR/MT',
+  },
+];
+
+// Rows to load from change log
+const ROWS_TO_LOAD = [
+  { key: 'Scrap',              row: 5 },
+  { key: 'Pallet DRI',        row: 3 },
+  { key: 'Pig Iron',          row: 4 },
+  { key: 'Iron Ore DRI',      row: 7 },
+  { key: 'Silico Manganese',  row: 6 },
+  { key: 'Nett Margin Billet', row: 10 },
+  { key: 'Margin TMT',        row: 12 },
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -73,9 +118,8 @@ function loadChangeLog(inputPath) {
   const range = XLSX.utils.decode_range(ws['!ref']);
   const maxCol = range.e.c;
 
-  // Collect dates from row 0 (Excel row 1), even columns (0-indexed: col 1, 3, 5...)
   const dates = [];
-  const dateCols = []; // 0-indexed column indices for Raipur
+  const dateCols = [];
   for (let c = 1; c <= maxCol; c += 2) {
     const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
     if (cell && cell.v != null) {
@@ -84,13 +128,12 @@ function loadChangeLog(inputPath) {
     }
   }
 
-  // Parse data for each unique row
   const data = {};
   const seenRows = {};
-  for (const spec of GRAPH_SPECS) {
-    const row = spec.row - 1; // Convert to 0-indexed
+  for (const spec of ROWS_TO_LOAD) {
+    const row = spec.row - 1;
     if (seenRows[row]) {
-      data[spec.item] = seenRows[row];
+      data[spec.key] = seenRows[row];
       continue;
     }
     const raipur = [];
@@ -103,7 +146,7 @@ function loadChangeLog(inputPath) {
     }
     const rowData = { Raipur: raipur, NCR: ncr };
     seenRows[row] = rowData;
-    data[spec.item] = rowData;
+    data[spec.key] = rowData;
   }
 
   return { dates, data };
@@ -118,22 +161,26 @@ function parseValue(cell) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CHANGE COMPUTATION
+// DATA HELPERS
 // ═══════════════════════════════════════════════════════════════
-function computeChanges(values, dates) {
-  const changes = [];
+function computeAbsolute(values, dates) {
+  const absValues = [];
+  const deltas = [];
   const labels = [];
-  for (let i = 1; i < values.length; i++) {
-    if (values[i] != null && values[i - 1] != null) {
-      changes.push(values[i] - values[i - 1]);
-    } else {
-      changes.push(0);
-    }
+  for (let i = 0; i < values.length; i++) {
+    absValues.push(values[i] != null ? values[i] : 0);
     labels.push(formatDateLabel(dates[i]));
+    if (i === 0) {
+      deltas.push(null);
+    } else if (values[i] != null && values[i - 1] != null) {
+      deltas.push(values[i] - values[i - 1]);
+    } else {
+      deltas.push(null);
+    }
   }
-  const valid = changes.filter(c => c !== 0);
-  const avg = valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
-  return { changes, labels, avg };
+  const validAbs = absValues.filter(v => v !== 0);
+  const avg = validAbs.length > 0 ? validAbs.reduce((a, b) => a + b, 0) / validAbs.length : 0;
+  return { values: absValues, deltas, labels, avg };
 }
 
 function formatDateLabel(dateStr) {
@@ -148,9 +195,15 @@ function formatDateLabel(dateStr) {
 }
 
 function formatNumber(val, item) {
-  if (item.includes('Silico Manganese')) return val.toFixed(1);
+  if (item && item.includes('Silico Manganese')) return val.toFixed(1);
   if (Math.abs(val) >= 1) return Math.round(val).toLocaleString('en-IN');
   return val.toFixed(2);
+}
+
+function formatDelta(val, item) {
+  if (val == null) return '';
+  const prefix = val >= 0 ? '+' : '';
+  return prefix + formatNumber(val, item);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -196,13 +249,28 @@ function addFooter(slide, pageNum, sourceText) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ANNOTATION HELPERS
+// ═══════════════════════════════════════════════════════════════
+function addAnnotationBox(slide, text, yPos, color) {
+  slide.addShape('rect', {
+    x: GRID.L, y: yPos, w: GRID.W, h: 0.30,
+    fill: { color: LTGREY }, line: { color: BORDER, width: 0.5 }
+  });
+  slide.addText(text, {
+    x: GRID.L + 0.15, y: yPos, w: GRID.W - 0.30, h: 0.30,
+    fontSize: 11, fontFace: FONT, color: color || BLUE,
+    bold: true, align: 'left', valign: 'middle', margin: 0
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
 // SLIDE BUILDERS
 // ═══════════════════════════════════════════════════════════════
 function addTitleSlide(pres, dates, pageNum) {
   const slide = pres.addSlide();
   slide.background = { color: WHITE };
 
-  slide.addText('Material cost change analysis', {
+  slide.addText('Material cost & margin analysis', {
     x: 0.60, y: 1.90, w: 9.40, h: 1.00,
     fontSize: 28, fontFace: FONT, color: BLUE,
     bold: true, align: 'left', valign: 'middle', margin: 0
@@ -211,7 +279,7 @@ function addTitleSlide(pres, dates, pageNum) {
   addDivider(slide, 2.95);
   addLogo(slide, 'title');
 
-  slide.addText('Month-on-month absolute change (INR) for key raw materials and margins', {
+  slide.addText('Key raw material prices and margin trends with month-on-month changes', {
     x: 0.64, y: 3.12, w: 9.40, h: 0.45,
     fontSize: 12, fontFace: FONT, color: GREY,
     align: 'left', valign: 'top', margin: 0
@@ -227,16 +295,12 @@ function addTitleSlide(pres, dates, pageNum) {
   return slide;
 }
 
-function addChartSlide(pres, spec, dates, data, pageNum) {
+// --- Dual market bar chart (absolute values) ---
+function addDualMarketBarSlide(pres, spec, dates, data, pageNum) {
   const slide = pres.addSlide();
   slide.background = { color: WHITE };
 
-  // Slide heading
-  const titleText = spec.marketKey
-    ? `${spec.item} — ${spec.unit}`
-    : `${spec.item} (${spec.markets.join(' & ')}) — ${spec.unit}`;
-
-  slide.addText(titleText, {
+  slide.addText(`${spec.title} — ${spec.unit}`, {
     x: 0.50, y: 0.10, w: 10.05, h: 0.58,
     fontSize: 20, fontFace: FONT, color: BLUE,
     bold: true, align: 'left', valign: 'middle', margin: 0
@@ -245,120 +309,135 @@ function addChartSlide(pres, spec, dates, data, pageNum) {
   addDivider(slide, 0.75);
   addLogo(slide, 'content');
 
-  const isDual = spec.markets.length === 2 && !spec.marketKey;
-
-  if (isDual) {
-    addDualMarketChart(pres, slide, spec, dates, data);
-  } else {
-    addSingleMarketChart(pres, slide, spec, dates, data);
-  }
-
-  addFooter(slide, pageNum, 'Source: Costing change log');
-  return slide;
-}
-
-function addSingleMarketChart(pres, slide, spec, dates, data) {
-  const marketKey = spec.marketKey || 'Raipur';
-  const values = data[spec.item][marketKey];
-  const { changes, labels, avg } = computeChanges(values, dates);
-
-  const chartData = [{
-    name: marketKey,
-    labels: labels,
-    values: changes
-  }];
-
-  slide.addChart(pres.charts.BAR, chartData, {
-    x: GRID.L, y: GRID.TOP, w: GRID.W, h: 4.80,
-    barDir: 'col',
-    chartColors: [BLUE],
-    chartArea: { fill: { color: WHITE } },
-    catAxisHidden: false,
-    catAxisLabelColor: GREY,
-    catAxisLabelFontSize: 11,
-    catAxisLabelFontFace: FONT,
-    catGridLine: { style: 'none' },
-    valAxisHidden: false,
-    valAxisLabelColor: GREY,
-    valAxisLabelFontSize: 10,
-    valAxisLabelFontFace: FONT,
-    valGridLine: { style: 'dash', color: 'E0E0E0', size: 0.5 },
-    showValue: true,
-    dataLabelPosition: 'outEnd',
-    dataLabelColor: BLUE,
-    dataLabelFontSize: 10,
-    dataLabelFontFace: FONT,
-    dataLabelFontBold: true,
-    showLegend: false,
-    showTitle: false
-  });
-
-  // Average annotation
-  addAverageAnnotation(slide, avg, spec, marketKey);
-}
-
-function addDualMarketChart(pres, slide, spec, dates, data) {
   const rValues = data[spec.item]['Raipur'];
   const nValues = data[spec.item]['NCR'];
-  const rResult = computeChanges(rValues, dates);
-  const nResult = computeChanges(nValues, dates);
+  const rResult = computeAbsolute(rValues, dates);
+  const nResult = computeAbsolute(nValues, dates);
 
   const chartData = [
-    { name: 'Raipur', labels: rResult.labels, values: rResult.changes },
-    { name: 'NCR',    labels: nResult.labels, values: nResult.changes }
+    { name: 'Raipur', labels: rResult.labels, values: rResult.values },
+    { name: 'NCR',    labels: nResult.labels, values: nResult.values }
   ];
 
   slide.addChart(pres.charts.BAR, chartData, {
-    x: GRID.L, y: GRID.TOP, w: GRID.W, h: 4.80,
+    x: GRID.L, y: GRID.TOP, w: GRID.W, h: 4.60,
     barDir: 'col',
-    chartColors: [BLUE, GREY],
+    chartColors: [COLORS.RAIPUR, COLORS.NCR],
     chartArea: { fill: { color: WHITE } },
     catAxisHidden: false,
     catAxisLabelColor: GREY,
-    catAxisLabelFontSize: 11,
+    catAxisLabelFontSize: 9,
     catAxisLabelFontFace: FONT,
     catGridLine: { style: 'none' },
     valAxisHidden: false,
     valAxisLabelColor: GREY,
-    valAxisLabelFontSize: 10,
+    valAxisLabelFontSize: 9,
     valAxisLabelFontFace: FONT,
     valGridLine: { style: 'dash', color: 'E0E0E0', size: 0.5 },
-    showValue: true,
-    dataLabelPosition: 'outEnd',
-    dataLabelColor: BLUE,
-    dataLabelFontSize: 10,
-    dataLabelFontFace: FONT,
-    dataLabelFontBold: true,
+    showValue: false,
     showLegend: true,
     legendPos: 'b',
-    legendFontSize: 11,
+    legendFontSize: 10,
     legendFontFace: FONT,
     legendColor: GREY,
     showTitle: false
   });
 
-  // Average annotations for both markets
-  addAverageAnnotation(slide, rResult.avg, spec, 'Raipur', 0);
-  addAverageAnnotation(slide, nResult.avg, spec, 'NCR', 1);
+  // Delta + average annotation boxes
+  const rLatestDelta = rResult.deltas[rResult.deltas.length - 1];
+  const nLatestDelta = nResult.deltas[nResult.deltas.length - 1];
+  const rDeltaStr = rLatestDelta != null ? formatDelta(rLatestDelta, spec.item) : 'N/A';
+  const nDeltaStr = nLatestDelta != null ? formatDelta(nLatestDelta, spec.item) : 'N/A';
+
+  addAnnotationBox(slide,
+    `Latest change:  Raipur ${rDeltaStr}  |  NCR ${nDeltaStr}     •     ` +
+    `Period avg:  Raipur ${formatNumber(rResult.avg, spec.item)}  |  NCR ${formatNumber(nResult.avg, spec.item)} ${spec.unit}`,
+    5.65, BLUE);
+
+  addFooter(slide, pageNum, 'Source: Costing change log');
+  return slide;
 }
 
-function addAverageAnnotation(slide, avg, spec, market, index) {
-  const yPos = index === 1 ? 6.10 : 5.85;
-  const color = index === 1 ? GREY : BLUE;
-  const label = spec.markets.length === 2 && !spec.marketKey
-    ? `${market} avg: ${formatNumber(avg, spec.item)} ${spec.unit}`
-    : `Period avg: ${formatNumber(avg, spec.item)} ${spec.unit}`;
+// --- Combined line chart (multi-series, dual Y-axis) ---
+function addCombinedLineSlide(pres, spec, dates, data, pageNum) {
+  const slide = pres.addSlide();
+  slide.background = { color: WHITE };
 
-  // Content heading style box for average
-  slide.addShape('rect', {
-    x: GRID.L, y: yPos, w: GRID.W, h: 0.35,
-    fill: { color: LTGREY }, line: { color: BORDER, width: 0.5 }
-  });
-  slide.addText(label, {
-    x: GRID.L + 0.15, y: yPos, w: GRID.W - 0.30, h: 0.35,
-    fontSize: 12, fontFace: FONT, color: color,
+  slide.addText(`${spec.title} — ${spec.primaryUnit} / ${spec.secondaryUnit}`, {
+    x: 0.50, y: 0.10, w: 10.05, h: 0.58,
+    fontSize: 20, fontFace: FONT, color: BLUE,
     bold: true, align: 'left', valign: 'middle', margin: 0
   });
+
+  addDivider(slide, 0.75);
+  addLogo(slide, 'content');
+
+  const labels = dates.map(d => formatDateLabel(d));
+  const chartData = [];
+  const chartColors = [];
+  const deltaInfoParts = [];
+
+  for (const s of spec.series) {
+    const values = data[s.name]['Raipur'];
+    const result = computeAbsolute(values, dates);
+    chartData.push({
+      name: s.name,
+      labels: labels,
+      values: result.values,
+    });
+    chartColors.push(s.color);
+
+    const latestDelta = result.deltas[result.deltas.length - 1];
+    const deltaStr = latestDelta != null ? formatDelta(latestDelta, s.name) : 'N/A';
+    const unit = s.axis === 'secondary' ? spec.secondaryUnit : spec.primaryUnit;
+    deltaInfoParts.push(`${s.name}: ${deltaStr} ${unit}`);
+  }
+
+  // Mark secondary axis series
+  // pptxgenjs combo: use secondaryValAxis on the last series (Silico Mn)
+  const secondaryIdx = spec.series.findIndex(s => s.axis === 'secondary');
+
+  slide.addChart(pres.charts.LINE, chartData, {
+    x: GRID.L, y: GRID.TOP, w: GRID.W, h: 4.60,
+    chartColors: chartColors,
+    chartArea: { fill: { color: WHITE } },
+    catAxisHidden: false,
+    catAxisLabelColor: GREY,
+    catAxisLabelFontSize: 9,
+    catAxisLabelFontFace: FONT,
+    catGridLine: { style: 'none' },
+    valAxisHidden: false,
+    valAxisLabelColor: GREY,
+    valAxisLabelFontSize: 9,
+    valAxisLabelFontFace: FONT,
+    valAxisTitle: spec.primaryUnit,
+    valAxisTitleColor: GREY,
+    valAxisTitleFontSize: 9,
+    valGridLine: { style: 'dash', color: 'E0E0E0', size: 0.5 },
+    showValue: false,
+    lineSize: 2,
+    lineSmooth: false,
+    showMarker: true,
+    markerSize: 5,
+    showLegend: true,
+    legendPos: 'b',
+    legendFontSize: 10,
+    legendFontFace: FONT,
+    legendColor: GREY,
+    showTitle: false,
+    // Secondary axis for Silico Manganese
+    secondaryValAxis: secondaryIdx >= 0,
+    secondaryValAxisTitle: secondaryIdx >= 0 ? spec.secondaryUnit : undefined,
+    secondaryValAxisTitleColor: GREY,
+    secondaryValAxisTitleFontSize: 9,
+    secondaryCatAxis: false,
+  });
+
+  // Delta annotation box
+  addAnnotationBox(slide, `Latest change:  ${deltaInfoParts.join('  |  ')}`, 5.65, BLUE);
+
+  addFooter(slide, pageNum, 'Source: Costing change log');
+  return slide;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -391,10 +470,14 @@ function main() {
   // Slide 1: Title
   addTitleSlide(pres, dates, pageNum++);
 
-  // Slides 2-10: Charts
-  for (const spec of GRAPH_SPECS) {
-    console.error(`  Generating chart: ${spec.item}...`);
-    addChartSlide(pres, spec, dates, data, pageNum++);
+  // Slides 2-5: Charts
+  for (const spec of CHART_SLIDES) {
+    console.error(`  Generating chart: ${spec.title || spec.item}...`);
+    if (spec.type === 'combinedLine') {
+      addCombinedLineSlide(pres, spec, dates, data, pageNum++);
+    } else {
+      addDualMarketBarSlide(pres, spec, dates, data, pageNum++);
+    }
   }
 
   // Ensure output directory exists
@@ -403,7 +486,7 @@ function main() {
 
   pres.writeFile({ fileName: outputPath }).then(() => {
     console.error(`Presentation saved: ${outputPath}`);
-    console.error(`Done! ${GRAPH_SPECS.length} charts generated.`);
+    console.error(`Done! ${CHART_SLIDES.length} charts generated.`);
     process.exit(0);
   }).catch(err => {
     console.error(`ERROR writing PPTX: ${err.message}`);
