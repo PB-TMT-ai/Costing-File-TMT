@@ -416,12 +416,12 @@ function addDualMarketBarSlide(pres, spec, dates, data, pageNum) {
   return slide;
 }
 
-// --- Multi-line chart with dual Y-axis for raw materials ---
+// --- Multi-line chart for raw materials (Silico Mn scaled to INR/MT range) ---
 function addMultiLineSlide(pres, spec, dates, data, pageNum) {
   const slide = pres.addSlide();
   slide.background = { color: WHITE };
 
-  slide.addText(`${spec.title} — ${spec.primaryUnit} / ${spec.secondaryUnit}`, {
+  slide.addText(`${spec.title} — ${spec.primaryUnit}`, {
     x: 0.50, y: 0.10, w: 10.05, h: 0.58,
     fontSize: 20, fontFace: FONT, color: BLUE,
     bold: true, align: 'left', valign: 'middle', margin: 0
@@ -434,12 +434,25 @@ function addMultiLineSlide(pres, spec, dates, data, pageNum) {
   const chartColors = [];
   const deltaInfoParts = [];
 
-  // Build all series as LINE chart data
+  // Compute scale factor for Silico Mn so it plots in same range as INR/MT materials
+  // Avg INR/MT ~ 30,000; Avg Silico Mn ~ 72 INR/kg; scale = 400
+  const SIMN_SCALE = 400;
+
   const chartData = [];
   for (const s of spec.series) {
     const values = data[s.name]['Raipur'];
     const result = computeAbsolute(values, dates);
-    chartData.push({ name: s.name, labels: labels, values: result.values });
+
+    let plotValues = result.values;
+    let seriesName = s.name;
+
+    if (s.axis === 'secondary') {
+      // Scale Silico Mn values to INR/MT range for visual alignment
+      plotValues = result.values.map(v => v * SIMN_SCALE);
+      seriesName = `${s.name} (${spec.secondaryUnit} × ${SIMN_SCALE})`;
+    }
+
+    chartData.push({ name: seriesName, labels: labels, values: plotValues });
     chartColors.push(s.color);
 
     const latestDelta = result.deltas[result.deltas.length - 1];
@@ -448,8 +461,6 @@ function addMultiLineSlide(pres, spec, dates, data, pageNum) {
     deltaInfoParts.push(`${s.name}: ${deltaStr} ${unit}`);
   }
 
-  // Use simple LINE chart — all 4 series on primary axis
-  // (pptxgenjs combo chart has XML bugs, so we use single chart type)
   slide.addChart(pres.charts.LINE, chartData, {
     x: GRID.L, y: GRID.TOP, w: GRID.W, h: 4.80,
     chartColors: chartColors,
@@ -479,10 +490,8 @@ function addMultiLineSlide(pres, spec, dates, data, pageNum) {
     showTitle: false,
   });
 
-  // Note about Silico Mn scale difference
-  addAnnotationBox(slide,
-    `Latest change:  ${deltaInfoParts.join('  |  ')}  •  Note: Silico Mn values in ${spec.secondaryUnit} (others in ${spec.primaryUnit})`,
-    5.85, BLUE);
+  // Delta annotation
+  addAnnotationBox(slide, `Latest change:  ${deltaInfoParts.join('  |  ')}`, 5.85, BLUE);
 
   addFooter(slide, pageNum, 'Source: Costing change log');
   return slide;
