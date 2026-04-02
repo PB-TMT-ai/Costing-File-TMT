@@ -15,6 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
 const PptxGenJS = require('pptxgenjs');
+const { execSync } = require('child_process');
 
 // ═══════════════════════════════════════════════════════════════
 // JSW ONE BRAND CONSTANTS
@@ -221,6 +222,26 @@ function buildLabelsWithDeltas(dates, deltas, itemName) {
   return labels;
 }
 
+/**
+ * Build labels with both Raipur and NCR deltas.
+ * E.g. "Jan'25\nR:+500 | N:-200"
+ */
+function buildDualDeltaLabels(dates, rDeltas, nDeltas, itemName) {
+  const labels = [];
+  for (let i = 0; i < dates.length; i++) {
+    const monthLabel = formatMonthLabel(dates[i]);
+    if (rDeltas[i] != null || nDeltas[i] != null) {
+      const rStr = rDeltas[i] != null ? 'R:' + formatDelta(rDeltas[i], itemName) : '';
+      const nStr = nDeltas[i] != null ? 'N:' + formatDelta(nDeltas[i], itemName) : '';
+      const parts = [rStr, nStr].filter(s => s).join(' | ');
+      labels.push(monthLabel + '\n' + parts);
+    } else {
+      labels.push(monthLabel);
+    }
+  }
+  return labels;
+}
+
 function formatMonthLabel(dateStr) {
   try {
     const d = new Date(dateStr + 'T00:00:00');
@@ -349,8 +370,8 @@ function addDualMarketBarSlide(pres, spec, dates, data, pageNum) {
   const rResult = computeAbsolute(rValues, dates);
   const nResult = computeAbsolute(nValues, dates);
 
-  // Build labels with Raipur delta in parentheses
-  const labelsWithDelta = buildLabelsWithDeltas(dates, rResult.deltas, spec.item);
+  // Build labels with both Raipur and NCR deltas
+  const labelsWithDelta = buildDualDeltaLabels(dates, rResult.deltas, nResult.deltas, spec.item);
 
   const chartData = [
     { name: 'Raipur', labels: labelsWithDelta, values: rResult.values },
@@ -395,8 +416,8 @@ function addDualMarketBarSlide(pres, spec, dates, data, pageNum) {
   return slide;
 }
 
-// --- Combo chart: bars on primary axis + line on secondary axis ---
-function addComboChartSlide(pres, spec, dates, data, pageNum) {
+// --- Multi-line chart with dual Y-axis for raw materials ---
+function addMultiLineSlide(pres, spec, dates, data, pageNum) {
   const slide = pres.addSlide();
   slide.background = { color: WHITE };
 
@@ -410,25 +431,16 @@ function addComboChartSlide(pres, spec, dates, data, pageNum) {
   addLogo(slide, 'content');
 
   const labels = dates.map(d => formatMonthLabel(d));
-
-  const barSeriesData = [];
-  const barColors = [];
-  const lineSeriesData = [];
-  const lineColors = [];
+  const chartColors = [];
   const deltaInfoParts = [];
 
+  // Build all series as LINE chart data
+  const chartData = [];
   for (const s of spec.series) {
     const values = data[s.name]['Raipur'];
     const result = computeAbsolute(values, dates);
-    const seriesObj = { name: s.name, labels: labels, values: result.values };
-
-    if (s.chartType === 'line') {
-      lineSeriesData.push(seriesObj);
-      lineColors.push(s.color);
-    } else {
-      barSeriesData.push(seriesObj);
-      barColors.push(s.color);
-    }
+    chartData.push({ name: s.name, labels: labels, values: result.values });
+    chartColors.push(s.color);
 
     const latestDelta = result.deltas[result.deltas.length - 1];
     const deltaStr = latestDelta != null ? formatDelta(latestDelta, s.name) : 'N/A';
@@ -436,37 +448,11 @@ function addComboChartSlide(pres, spec, dates, data, pageNum) {
     deltaInfoParts.push(`${s.name}: ${deltaStr} ${unit}`);
   }
 
-  // Build combo chart with array-of-types syntax
-  const chartTypes = [];
-
-  if (barSeriesData.length > 0) {
-    chartTypes.push({
-      type: pres.charts.BAR,
-      data: barSeriesData,
-      options: {
-        barDir: 'col',
-        chartColors: barColors,
-      }
-    });
-  }
-
-  if (lineSeriesData.length > 0) {
-    chartTypes.push({
-      type: pres.charts.LINE,
-      data: lineSeriesData,
-      options: {
-        secondaryValAxis: true,
-        secondaryCatAxis: false,
-        chartColors: lineColors,
-        lineSize: 2.5,
-        showMarker: true,
-        markerSize: 6,
-      }
-    });
-  }
-
-  slide.addChart(chartTypes, {
+  // Use simple LINE chart — all 4 series on primary axis
+  // (pptxgenjs combo chart has XML bugs, so we use single chart type)
+  slide.addChart(pres.charts.LINE, chartData, {
     x: GRID.L, y: GRID.TOP, w: GRID.W, h: 4.80,
+    chartColors: chartColors,
     chartArea: { fill: { color: WHITE } },
     catAxisHidden: false,
     catAxisLabelColor: GREY,
@@ -481,11 +467,10 @@ function addComboChartSlide(pres, spec, dates, data, pageNum) {
     valAxisTitleColor: GREY,
     valAxisTitleFontSize: 9,
     valGridLine: { style: 'dash', color: 'E0E0E0', size: 0.5 },
-    secondaryValAxis: true,
-    secondaryValAxisTitle: spec.secondaryUnit,
-    secondaryValAxisTitleColor: COLORS.SILICO_MN,
-    secondaryValAxisTitleFontSize: 9,
     showValue: false,
+    lineSize: 2,
+    showMarker: true,
+    markerSize: 5,
     showLegend: true,
     legendPos: 'b',
     legendFontSize: 10,
@@ -494,11 +479,28 @@ function addComboChartSlide(pres, spec, dates, data, pageNum) {
     showTitle: false,
   });
 
-  // Delta annotation
-  addAnnotationBox(slide, `Latest change:  ${deltaInfoParts.join('  |  ')}`, 5.85, BLUE);
+  // Note about Silico Mn scale difference
+  addAnnotationBox(slide,
+    `Latest change:  ${deltaInfoParts.join('  |  ')}  •  Note: Silico Mn values in ${spec.secondaryUnit} (others in ${spec.primaryUnit})`,
+    5.85, BLUE);
 
   addFooter(slide, pageNum, 'Source: Costing change log');
   return slide;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PPTX POST-PROCESSING (fix pptxgenjs orphaned references)
+// ═══════════════════════════════════════════════════════════════
+function cleanPptx(filePath) {
+  // pptxgenjs registers Content_Types for slideMasters that don't exist.
+  // PowerPoint sees missing parts and asks for repair. Fix by removing orphans.
+  const cleanScript = path.join(__dirname, 'clean_pptx.py');
+  try {
+    execSync(`python3 "${cleanScript}" "${filePath}"`, { encoding: 'utf-8', stdio: 'pipe' });
+    console.error('Post-process: removed orphaned Content_Types references');
+  } catch (e) {
+    console.error('WARNING: Post-process failed:', e.stderr || e.message);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -532,7 +534,7 @@ function main() {
   for (const spec of CHART_SLIDES) {
     console.error(`  Generating chart: ${spec.title || spec.item}...`);
     if (spec.type === 'comboChart') {
-      addComboChartSlide(pres, spec, dates, data, pageNum++);
+      addMultiLineSlide(pres, spec, dates, data, pageNum++);
     } else {
       addDualMarketBarSlide(pres, spec, dates, data, pageNum++);
     }
@@ -542,6 +544,8 @@ function main() {
   if (outDir && !fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
   pres.writeFile({ fileName: outputPath }).then(() => {
+    // Post-process to fix pptxgenjs orphaned Content_Types
+    cleanPptx(outputPath);
     console.error(`Presentation saved: ${outputPath}`);
     console.error(`Done! ${CHART_SLIDES.length} charts generated.`);
     process.exit(0);
