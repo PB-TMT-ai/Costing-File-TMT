@@ -449,7 +449,7 @@ function addMultiLineSlide(pres, spec, dates, data, pageNum) {
     if (s.axis === 'secondary') {
       // Scale Silico Mn values to INR/MT range for visual alignment
       plotValues = result.values.map(v => v * SIMN_SCALE);
-      seriesName = `${s.name} (${spec.secondaryUnit} × ${SIMN_SCALE})`;
+      seriesName = `${s.name} (${spec.secondaryUnit})`;
     }
 
     chartData.push({ name: seriesName, labels: labels, values: plotValues });
