@@ -145,11 +145,34 @@ def _verify_no_formulas(filepath):
     print(f"Verified: 0 formulas in output (all values computed)", file=sys.stderr)
 
 
-def _auto_push(output_path, log_path, report_date):
+def _regenerate_material_graphs():
+    """Regenerate material_change_graphs.pptx from the updated change log."""
+    script = os.path.join("tools", "create_material_change_graph.js")
+    if not os.path.exists(script):
+        print("WARNING: create_material_change_graph.js not found, skipping graph generation", file=sys.stderr)
+        return
+    try:
+        result = subprocess.run(
+            ["node", script],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode == 0:
+            print("Material change graphs regenerated", file=sys.stderr)
+        else:
+            print(f"WARNING: Graph generation failed: {result.stderr.strip()}", file=sys.stderr)
+    except FileNotFoundError:
+        print("WARNING: Node.js not found, skipping graph generation", file=sys.stderr)
+    except subprocess.TimeoutExpired:
+        print("WARNING: Graph generation timed out", file=sys.stderr)
+
+
+def _auto_push(output_path, log_path, report_date, graphs_path=None):
     """Auto-commit and push output files to main."""
     try:
         # Stage output files
         files_to_add = [output_path, log_path]
+        if graphs_path:
+            files_to_add.append(graphs_path)
         files_to_add = [f for f in files_to_add if os.path.exists(f)]
         subprocess.run(["git", "add"] + files_to_add, check=True, capture_output=True)
 
@@ -656,8 +679,12 @@ def main():
         update_change_log(args, margins)
         format_change_log(log_path)
 
+        # Regenerate material change graphs from updated change log
+        _regenerate_material_graphs()
+
         # Auto-commit and push to main
-        _auto_push(output_path, log_path, args.report_date)
+        graphs_path = os.path.join("output", "material_change_graphs.pptx")
+        _auto_push(output_path, log_path, args.report_date, graphs_path=graphs_path)
 
     sys.exit(0)
 
