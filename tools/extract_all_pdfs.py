@@ -162,7 +162,8 @@ def find_scrap(doc, location="DAP-Raipur"):
 
     for page in doc:
         text = page.get_text()
-        if "Melting Scrap" not in text:
+        # Require the India table header — summary pages also mention "Melting Scrap"
+        if "Melting Scrap (India)" not in text:
             continue
 
         lines = [l.strip() for l in text.split("\n")]
@@ -320,9 +321,14 @@ def find_tmt(doc, location="Ex-Raipur"):
 
 def find_tmt_v2(doc, location="Ex-Raipur"):
     """More robust TMT extraction - searches the Rebar IF Route section."""
+    # The Rebar (India) table can spill onto following pages without repeating
+    # its header, so search every page from the first "Rebar (India)" page onward
+    in_rebar = False
     for page in doc:
         text = page.get_text()
-        if "Rebar (India)" not in text or "IF Route" not in text:
+        if "Rebar (India)" in text:
+            in_rebar = True
+        if not in_rebar or "IF Route" not in text:
             continue
 
         lines = [l.strip() for l in text.split("\n")]

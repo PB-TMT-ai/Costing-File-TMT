@@ -164,3 +164,6 @@ To process multiple historical PDFs at once:
 - Output files are auto-pushed to `main` — no manual merge needed
 - Output file naming: `YYYYMMDD_Costing TMT.xlsx` — only Raipur and NCR tabs are kept
 - **Batch processing**: When processing historical PDFs, delete `change_log.xlsx` first and reprocess in chronological order. Use `SKIP_PUSH=1` to skip push retries during batch runs
+- **Melting Scrap summary pages**: Early pages (market summary) also mention "Melting Scrap" — the scrap extractor must look for the "Melting Scrap (India)" table header, not just "Melting Scrap", or it stops on the wrong page and returns nothing (fixed Sep 2026)
+- **Rebar table spills across pages**: The Ex-Raipur rebar rows can land on a continuation page with no "Rebar (India)" header. The TMT extractor searches every page from the first Rebar (India) page onward (fixed Sep 2026)
+- **Fe 500 / Fe 500D order is not fixed**: From Aug 2026 the PDF lists Ex-Raipur Fe 500 *before* Fe 500D (earlier reports had 500D first). Always match on the grade text, never on position
