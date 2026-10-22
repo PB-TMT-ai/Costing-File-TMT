@@ -395,6 +395,9 @@ def extract_from_pdf(pdf_path):
     tmt_ncr = find_tmt_v2(doc, "Ex-Delhi/NCR")
     if tmt_ncr is None:
         tmt_ncr = find_tmt(doc, "Ex-Delhi/NCR")
+    if tmt_ncr is None:
+        # From 15 Oct 2026 BigMint reports NCR rebar on FoR basis only
+        tmt_ncr = find_tmt_v2(doc, "FoR-Delhi/NCR")
 
     doc.close()
 
